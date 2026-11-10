@@ -149,7 +149,8 @@ bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_de
     XrResult r = xrCreateSession(g_xr_instance, &ci, &g_xr_session);
     if (XR_FAILED(r)) { xr_log("xrCreateSession failed", r); return false; }
     if (!xr_load_frame_api() || !xr_create_stereo() || !xr_make_touch_actions()) { xr_log("OpenXR stereo setup failed"); return false; }
-    xr_log("OpenXR stereo swapchains and reference spaces initialized");
+    xr_log("OpenXR session, stereo swapchains, and Touch actions initialized");
+    g_xr_setup_complete.store(true, std::memory_order_release);
     return true;
 }
 
