@@ -248,7 +248,7 @@ bool xr_make_touch_actions(){
  {g_xr_trigger,trigger[0]},{g_xr_trigger,trigger[1]},{g_xr_grip,grip[0]},{g_xr_grip,grip[1]},
  {g_xr_stick,stick[0]},{g_xr_stick,stick[1]},{g_xr_a,pa},{g_xr_b,pb},{g_xr_x,px},{g_xr_y,py},{g_xr_menu,pm},{g_xr_stick_click,plc},{g_xr_stick_click,prc}};
  XrInteractionProfileSuggestedBinding sb{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};sb.interactionProfile=profile;
- sb.countSuggestedBindings=8;sb.suggestedBindings=b;if(XR_FAILED(p_suggest_bindings(g_xr_instance,&sb)))return false;
+ sb.countSuggestedBindings=uint32_t(sizeof(b)/sizeof(b[0]));sb.suggestedBindings=b;if(XR_FAILED(p_suggest_bindings(g_xr_instance,&sb)))return false;
  XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};at.countActionSets=1;at.actionSets=&g_xr_action_set;
  if(XR_FAILED(p_attach_actions(g_xr_session,&at)))return false;
  XrActionSpaceCreateInfo ac{XR_TYPE_ACTION_SPACE_CREATE_INFO};ac.action=g_xr_hand_pose;ac.poseInActionSpace.orientation.w=1;
