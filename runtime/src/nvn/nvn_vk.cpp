@@ -33,6 +33,8 @@
 
 #if defined(__ANDROID__)
 bool xr_android_is_available();
+bool xr_android_get_vulkan_instance_extensions(std::string*);
+bool xr_android_get_vulkan_device_extensions(std::string*);
 bool xr_android_frame_begin();
 bool xr_android_acquire_eye(uint32_t eye, VkImage* image);
 void xr_android_eye_extent(uint32_t eye, uint32_t* width, uint32_t* height);
@@ -209,6 +211,28 @@ bool init() {
     std::vector<VkExtensionProperties> iext(n);
     p_enum_instance_ext(nullptr, &n, iext.data());
     std::vector<const char*> exts = {VK_KHR_SURFACE_EXTENSION_NAME, plat::vulkan_surface_extension()};
+#if defined(__ANDROID__)
+    std::vector<std::string> xr_instance_ext_storage;
+    if (xr_mode) {
+        std::string required;
+        if (!xr_android_get_vulkan_instance_extensions(&required)) {
+            log("nvn/vk: could not query OpenXR-required Vulkan instance extensions");
+            return false;
+        }
+        for (size_t at = 0; at < required.size();) {
+            while (at < required.size() && required[at] == ' ') ++at;
+            size_t end = required.find(' ', at);
+            if (end == std::string::npos) end = required.size();
+            if (end > at) {
+                std::string name = required.substr(at, end - at);
+                if (std::find_if(exts.begin(), exts.end(), [&](const char* e) { return name == e; }) == exts.end())
+                    xr_instance_ext_storage.push_back(std::move(name));
+            }
+            at = end + 1;
+        }
+        for (const auto& name : xr_instance_ext_storage) exts.push_back(name.c_str());
+    }
+#endif
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     // HDR colour spaces on the surface (video.hdr): only listed by vkGetPhysicalDeviceSurfaceFormatsKHR with it.
     if (has_extension(iext, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME))
@@ -303,6 +327,32 @@ bool init() {
     std::vector<VkExtensionProperties> dext(n);
     p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
     std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+#if defined(__ANDROID__)
+    std::vector<std::string> xr_device_ext_storage;
+    if (xr_mode) {
+        std::string required;
+        if (!xr_android_get_vulkan_device_extensions(&required)) {
+            log("nvn/vk: could not query OpenXR-required Vulkan device extensions");
+            return false;
+        }
+        for (size_t at = 0; at < required.size();) {
+            while (at < required.size() && required[at] == ' ') ++at;
+            size_t end = required.find(' ', at);
+            if (end == std::string::npos) end = required.size();
+            if (end > at) {
+                std::string name = required.substr(at, end - at);
+                if (!has_extension(dext, name.c_str())) {
+                    log("nvn/vk: OpenXR-required device extension is unavailable: %s", name.c_str());
+                    return false;
+                }
+                if (std::find_if(dexts.begin(), dexts.end(), [&](const char* e) { return name == e; }) == dexts.end())
+                    xr_device_ext_storage.push_back(std::move(name));
+            }
+            at = end + 1;
+        }
+        for (const auto& name : xr_device_ext_storage) dexts.push_back(name.c_str());
+    }
+#endif
     // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
     // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
     // features, which must be enabled to be used.
