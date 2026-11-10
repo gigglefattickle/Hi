@@ -69,16 +69,18 @@ Do not introduce distance-based object culling as part of the initial XR bring-u
 
 ## Current implementation status
 
-The first native bootstrap increment is now in the branch:
+The first native bootstrap and shared-device increment are now in the branch:
 
 - `runtime/src/openxr_android.cpp` initializes the Khronos Android loader with the NativeActivity VM/context, checks for `XR_KHR_android_create_instance` and `XR_KHR_vulkan_enable2`, creates an OpenXR instance, and discovers the HMD system.
 - `CMakeLists.txt` fetches Khronos OpenXR-SDK 1.1.58 and links the loader into the Android runtime.
 - `tools/build_android.sh` packages `libopenxr_loader.so` into the ARM64 APK.
 - `platform_android.cpp` runs the loader bootstrap before game startup. If no runtime is available, the existing flat-screen path remains the fallback.
+- `runtime/src/openxr_android.cpp` now queries the runtime's Vulkan version range and exposes wrappers for `xrCreateVulkanInstanceKHR`, `xrGetVulkanGraphicsDevice2KHR`, `xrCreateVulkanDeviceKHR`, and `xrCreateSession`.
+- `runtime/src/nvn/nvn_vk.cpp` uses those wrappers on Android when OpenXR initialized successfully. It preserves the existing Vulkan feature chain and queue selection, then creates an `XrSession` using the same Vulkan instance, physical device, logical device, and queue as the game.
 
-**Not implemented yet:** Vulkan instance/device creation through `XR_KHR_vulkan_enable2`, `XrSession` creation, OpenXR frame loop, per-eye swapchains/projection layer, head-pose camera integration, Touch controller actions, and the Quest immersive launcher manifest. This is therefore not yet a playable VR build and no APK has been verified.
+**Not implemented yet:** processing OpenXR session-state events and beginning the session, OpenXR frame loop, per-eye swapchains/projection layer, head-pose camera integration, Touch controller actions, and the Quest immersive launcher manifest. The current code creates the shared Vulkan objects and an `XrSession`, but does not yet submit XR frames. This is therefore not yet a playable VR build and no APK has been verified.
 
-The next code milestone is to make `nvn_vk.cpp` obtain its Vulkan instance, XR-selected physical device, and logical device through OpenXR while preserving the existing feature chain. Only then can the session use the exact game device. A Quest 3 device run remains necessary to validate runtime startup, graphics binding, frame pacing, and controller tracking.
+The next code milestone is the OpenXR frame loop and stereo swapchains, followed by head-pose camera integration. A Quest 3 device run remains necessary to validate runtime startup, graphics binding, frame pacing, and controller tracking.
 
 ## References
 
