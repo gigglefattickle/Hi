@@ -96,9 +96,7 @@ bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr gipa, VkPhysicalD
     return true;
 }
 
-bool xr_load_frame_api();
-bool xr_create_stereo();
-bool xr_make_touch_actions();
+namespace { bool xr_load_frame_api(); bool xr_create_stereo(); bool xr_make_touch_actions(); }
 
 bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
                                uint32_t queue_family, uint32_t queue_index) {
@@ -276,6 +274,7 @@ bool xr_android_frame_begin() {
  li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_local;
  uint32_t count=0;r=p_locate_views(g_xr_session,&li,&vs,2,&count,g_xr_views);
  if(XR_FAILED(r)||count!=2){g_xr_render=false;xr_log("xrLocateViews failed",r);}
+ xr_update_tracking();
  return g_xr_render;
 }
 bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
