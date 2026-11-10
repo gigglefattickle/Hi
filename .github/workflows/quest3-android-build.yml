@@ -50,11 +50,11 @@ jobs:
             tar -xz -C private/third_party
 
       - name: Configure, compile, and package ARM64 APK
-        run: tools/build_android.sh --no-game --jobs 2
+        run: tools/build_android.sh --quest3 --no-game --jobs 2
 
       - name: Verify APK architecture and OpenXR loader
         run: |
-          APK=private/acnh/apk-app/acnh.apk
+          APK=private/acnh/apk-quest3-app/acnh-vr.apk
           test -s "$APK"
           unzip -l "$APK" | grep -E "lib/arm64-v8a/libacnh.so"
           unzip -l "$APK" | grep -E "lib/arm64-v8a/libopenxr_loader.so"
@@ -64,7 +64,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: quest3-openxr-arm64-apk
+          name: acnh-vr-quest3-arm64-apk
           path: private/acnh/apk-app/acnh.apk
           if-no-files-found: error
           retention-days: 14
