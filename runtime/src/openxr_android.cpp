@@ -354,9 +354,10 @@ bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
  if(!g_xr_frame||!g_xr_render||eye>=2||!image||g_xr_acquired[eye])return false;
  XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
  if(XR_FAILED(p_acquire(g_xr_swapchains[eye],&ai,&g_xr_indices[eye])))return false;
+ g_xr_acquired[eye]=true;
  XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
  if(XR_FAILED(p_wait_image(g_xr_swapchains[eye],&wi)))return false;
- g_xr_acquired[eye]=true;*image=g_xr_images[eye][g_xr_indices[eye]].image;return true;
+ *image=g_xr_images[eye][g_xr_indices[eye]].image;return true;
 }
 void xr_android_frame_end() {
  if(!g_xr_frame)return;
