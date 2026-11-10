@@ -31,6 +31,15 @@
 
 #include <nx/game.h>
 
+#if defined(__ANDROID__)
+bool xr_android_is_available();
+uint32_t xr_android_vulkan_api_version();
+bool xr_android_create_vulkan_instance(void*, void*, void*, void*);
+bool xr_android_get_vulkan_physical_device(void*, void*);
+bool xr_android_create_vulkan_device(void*, void*, void*, void*, void*);
+bool xr_android_create_session(void*, void*, void*, uint32_t, uint32_t);
+#endif
+
 namespace nx {
 void vblank_hold();  // hle_vi.cpp: waits for the vblank before the one the image is due at
 }
@@ -179,6 +188,11 @@ bool init() {
         log("nvn/vk: no Vulkan loader");
         return false;
     }
+#if defined(__ANDROID__)
+    const bool xr_mode = xr_android_is_available();
+#else
+    const bool xr_mode = false;
+#endif
     for (size_t k = 0; k < g_entry_count; k++) *g_entries[k].pfn = gipa(nullptr, g_entries[k].name);
     p_enum_instance_ext = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
         gipa(nullptr, "vkEnumerateInstanceExtensionProperties"));
@@ -207,10 +221,24 @@ bool init() {
             exts.push_back(e.c_str());
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = nx::game::kInfo.title;
+#if defined(__ANDROID__)
+    app.apiVersion = xr_mode ? xr_android_vulkan_api_version() : VK_API_VERSION_1_3;
+#else
     app.apiVersion = VK_API_VERSION_1_3;
+#endif
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = uint32_t(exts.size());
     ici.ppEnabledExtensionNames = exts.data();
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
+        if (!xr_android_create_vulkan_instance(reinterpret_cast<void*>(gipa), &ici, &g_instance, &xr_vk_result) ||
+            xr_vk_result != VK_SUCCESS) {
+            log("nvn/vk: OpenXR Vulkan instance creation failed (%d)", int(xr_vk_result));
+            return false;
+        }
+    } else
+#endif
     if (!check(p_create_instance(&ici, nullptr, &g_instance), "vkCreateInstance")) return false;
     for (size_t k = 0; k < g_entry_count; k++)
         if (auto p = gipa(g_instance, g_entries[k].name)) *g_entries[k].pfn = p;
@@ -222,6 +250,14 @@ bool init() {
     std::vector<VkPhysicalDevice> gpus(n);
     p_enum_physical(g_instance, &n, gpus.data());
     gpus.resize(n);
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        if (!xr_android_get_vulkan_physical_device(&g_instance, &g_physical) || !g_physical) {
+            log("nvn/vk: OpenXR did not provide a compatible Vulkan physical device");
+            return false;
+        }
+    } else
+#endif
     g_physical = pick_physical_device(gpus);  // NX_GPU, default: the first discrete GPU (nvn_gpu_pick.cpp)
     if (!g_physical) {
         log("nvn/vk: no GPU");
@@ -449,8 +485,25 @@ bool init() {
     dci.enabledExtensionCount = uint32_t(dexts.size());
     dci.ppEnabledExtensionNames = dexts.data();
     dci.pNext = &features;
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
+        if (!xr_android_create_vulkan_device(reinterpret_cast<void*>(gipa), &g_physical, &dci,
+                                             &g_device, &xr_vk_result) || xr_vk_result != VK_SUCCESS) {
+            log("nvn/vk: OpenXR Vulkan device creation failed (%d)", int(xr_vk_result));
+            return false;
+        }
+    } else
+#endif
     if (!check(p_create_device(g_physical, &dci, nullptr, &g_device), "vkCreateDevice")) return false;
     p_vkGetDeviceQueue(g_device, g_family, 0, &g_queue);
+#if defined(__ANDROID__)
+    if (xr_mode && !xr_android_create_session(&g_instance, &g_physical, &g_device, g_family, 0)) {
+        log("nvn/vk: OpenXR session creation failed");
+        return false;
+    }
+    if (xr_mode) log("nvn/vk: OpenXR-compatible Vulkan device and XrSession created");
+#endif
     ffx_fg_device_ready(g_device, g_queue);
     vk_defer_install();  // nvn_vk_defer.cpp
     temporal_device_ready();
