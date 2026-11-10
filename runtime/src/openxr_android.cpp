@@ -10,6 +10,7 @@
 #include <android_native_app_glue.h>
 #include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -161,6 +162,7 @@ std::vector<XrSwapchainImageVulkan2KHR> g_xr_images[2];
 uint32_t g_xr_indices[2]={}; bool g_xr_acquired[2]={};
 XrTime g_xr_time=0;
 
+std::mutex g_xr_tracking_mutex;
 XrActionSet g_xr_action_set=XR_NULL_HANDLE;
 XrAction g_xr_hand_pose=XR_NULL_HANDLE,g_xr_trigger=XR_NULL_HANDLE,g_xr_grip=XR_NULL_HANDLE,g_xr_stick=XR_NULL_HANDLE;
 XrAction g_xr_a=XR_NULL_HANDLE,g_xr_b=XR_NULL_HANDLE,g_xr_x=XR_NULL_HANDLE,g_xr_y=XR_NULL_HANDLE,g_xr_menu=XR_NULL_HANDLE,g_xr_stick_click=XR_NULL_HANDLE;
@@ -254,6 +256,7 @@ bool xr_make_touch_actions(){
  return true;
 }
 void xr_update_tracking(){
+ std::lock_guard<std::mutex> lock(g_xr_tracking_mutex);
  XrActiveActionSet active{g_xr_action_set,XR_NULL_PATH};XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
  if(XR_FAILED(p_sync_actions(g_xr_session,&si)))return;
  XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
@@ -337,6 +340,7 @@ void xr_android_eye_extent(uint32_t eye,uint32_t* width,uint32_t* height) {
 }
 void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,float* left_rot,
  float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active,uint64_t* buttons) {
+ std::lock_guard<std::mutex> lock(g_xr_tracking_mutex);
  auto cp=[](const XrPosef&p,float*pos,float*rot){
   if(pos){pos[0]=p.position.x;pos[1]=p.position.y;pos[2]=p.position.z;}
   if(rot){rot[0]=p.orientation.x;rot[1]=p.orientation.y;rot[2]=p.orientation.z;rot[3]=p.orientation.w;}
