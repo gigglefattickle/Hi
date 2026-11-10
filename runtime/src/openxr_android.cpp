@@ -185,6 +185,63 @@ bool xr_create_stereo(){
 }
 }
 
+
+bool xr_android_poll_events() {
+ if(g_xr_session==XR_NULL_HANDLE||!p_poll)return false;
+ XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
+ while(p_poll(g_xr_instance,&event)==XR_SUCCESS){
+  if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED){
+   auto* changed=reinterpret_cast<XrEventDataSessionStateChanged*>(&event);g_xr_state=changed->state;
+   if(g_xr_state==XR_SESSION_STATE_READY&&!g_xr_running){
+    XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    XrResult r=p_begin(g_xr_session,&bi);if(XR_SUCCEEDED(r)){g_xr_running=true;xr_log("OpenXR session began in READY state");}else xr_log("xrBeginSession failed",r);
+   }else if(g_xr_state==XR_SESSION_STATE_STOPPING&&g_xr_running){p_end(g_xr_session);g_xr_running=false;xr_log("OpenXR session ended on STOPPING");}
+   else if(g_xr_state==XR_SESSION_STATE_EXITING||g_xr_state==XR_SESSION_STATE_LOSS_PENDING)g_xr_running=false;
+  }
+  event={XR_TYPE_EVENT_DATA_BUFFER};
+ }
+ return g_xr_running;
+}
+bool xr_android_frame_begin() {
+ xr_android_poll_events();if(!g_xr_running||g_xr_frame)return false;
+ XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};XrFrameState fs{XR_TYPE_FRAME_STATE};
+ XrResult r=p_wait(g_xr_session,&wi,&fs);if(XR_FAILED(r)){xr_log("xrWaitFrame failed",r);return false;}
+ g_xr_time=fs.predictedDisplayTime;XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
+ r=p_frame_begin(g_xr_session,&bi);if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
+ g_xr_frame=true;g_xr_render=fs.shouldRender;
+ XrViewState vs{XR_TYPE_VIEW_STATE};XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
+ li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_local;
+ uint32_t count=0;r=p_locate_views(g_xr_session,&li,&vs,2,&count,g_xr_views);
+ if(XR_FAILED(r)||count!=2){g_xr_render=false;xr_log("xrLocateViews failed",r);}
+ return g_xr_render;
+}
+bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
+ if(!g_xr_frame||!g_xr_render||eye>=2||!image||g_xr_acquired[eye])return false;
+ XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+ if(XR_FAILED(p_acquire(g_xr_swapchains[eye],&ai,&g_xr_indices[eye])))return false;
+ XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
+ if(XR_FAILED(p_wait_image(g_xr_swapchains[eye],&wi)))return false;
+ g_xr_acquired[eye]=true;*image=g_xr_images[eye][g_xr_indices[eye]].image;return true;
+}
+void xr_android_frame_end() {
+ if(!g_xr_frame)return;
+ XrCompositionLayerProjectionView pv[2]={{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
+ bool submit=g_xr_render;
+ for(uint32_t e=0;e<2;e++){
+  if(g_xr_acquired[e]){XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+   if(XR_FAILED(p_release(g_xr_swapchains[e],&ri)))submit=false;g_xr_acquired[e]=false;}else submit=false;
+  pv[e].pose=g_xr_views[e].pose;pv[e].fov=g_xr_views[e].fov;pv[e].subImage.swapchain=g_xr_swapchains[e];
+  pv[e].subImage.imageRect.offset={0,0};pv[e].subImage.imageRect.extent={
+   int32_t(g_xr_config[e].recommendedImageRectWidth),int32_t(g_xr_config[e].recommendedImageRectHeight)};
+ }
+ XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=g_xr_local;layer.viewCount=2;layer.views=pv;
+ const XrCompositionLayerBaseHeader* layers[]={reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer)};
+ XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=g_xr_time;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+ ei.layerCount=submit?1:0;ei.layers=submit?layers:nullptr;
+ XrResult r=p_frame_end(g_xr_session,&ei);if(XR_FAILED(r))xr_log("xrEndFrame failed",r);
+ g_xr_frame=false;g_xr_render=false;
+}
+
 // Called from android_main after the NativeActivity is available. This deliberately stops at
 // runtime/system discovery: a session must not be created until nvn_vk has an XR-compatible
 // VkInstance/VkDevice and the renderer can submit OpenXR swapchain images.
