@@ -58,7 +58,7 @@ jobs:
           test -s "$APK"
           unzip -l "$APK" | grep -E "lib/arm64-v8a/libacnh.so"
           unzip -l "$APK" | grep -E "lib/arm64-v8a/libopenxr_loader.so"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "package: name=\x27io.github.acnhrecomp.quest3\x27"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='io.github.acnhrecomp.quest3'"
           echo "ARM64 APK packaging verification passed."
 
       - name: Upload APK
