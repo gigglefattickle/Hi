@@ -217,10 +217,10 @@ void read_pad(PadState& p) {
     if (xr_android_is_available()) {
         float hp[3]{}, hr[4]{}, lp[3]{}, lr[4]{}, rp[3]{}, rr[4]{};
         float triggers[2]{}, grips[2]{}, sticks[4]{};
-        bool active[2]{};
+        bool active[2]{}, head_valid = false;
         uint64_t buttons[2]{};
-        xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons);
-        g_xr_head_valid = true;
+        xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons,&head_valid);
+        g_xr_head_valid = head_valid;
         std::copy(hp, hp + 3, g_xr_head_position);
         std::copy(hr, hr + 4, g_xr_head_orientation);
         if (active[0] || active[1]) {
