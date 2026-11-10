@@ -328,7 +328,7 @@ bool xr_android_frame_begin() {
  XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};XrFrameState fs{XR_TYPE_FRAME_STATE};
  XrResult r=p_wait(g_xr_session,&wi,&fs);if(XR_FAILED(r)){xr_log("xrWaitFrame failed",r);return false;}
  g_xr_time=fs.predictedDisplayTime;XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
- XrResult r; { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); r=p_frame_begin(g_xr_session,&bi); } if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
+ { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); r=p_frame_begin(g_xr_session,&bi); } if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
  g_xr_frame=true;g_xr_render=fs.shouldRender;
  XrViewState vs{XR_TYPE_VIEW_STATE};XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
  li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_local;
