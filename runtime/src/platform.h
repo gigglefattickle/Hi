@@ -129,7 +129,11 @@ struct PadState {
     int32_t lx = 0, ly = 0, rx = 0, ry = 0;
 };
 void read_pad(PadState& p);  // player 1
+#if defined(__ANDROID__)
 bool read_xr_head_pose(float* position, float* orientation);  // Android OpenXR head pose, when available
+#else
+inline bool read_xr_head_pose(float*, float*) { return false; }
+#endif
 // Players 2.. (index 1..kMaxPlayers-1): one more controller each (platform_mac.cpp, platform_linux.cpp). false
 // while that player has none, and on hosts that only drive player 1.
 constexpr int kMaxPlayers = 4;
