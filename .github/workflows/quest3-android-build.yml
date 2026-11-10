@@ -45,16 +45,12 @@ jobs:
 
       - name: Fetch Vulkan headers
         run: |
+          mkdir -p private/third_party
           curl -fsSL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.357.tar.gz" |
-            tar -xz -C "$RUNNER_TEMP"
-          echo "VULKAN_HEADERS=$RUNNER_TEMP/Vulkan-Headers-1.4.357" >> "$GITHUB_ENV"
+            tar -xz -C private/third_party
 
       - name: Configure, compile, and package ARM64 APK
-        run: |
-          tools/build_android.sh --no-game --jobs 2
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-          NX_VULKAN_SDK: ${{ env.VULKAN_HEADERS }}
+        run: tools/build_android.sh --no-game --jobs 2
 
       - name: Verify APK architecture and OpenXR loader
         run: |
