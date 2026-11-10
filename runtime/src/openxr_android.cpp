@@ -38,6 +38,37 @@ bool xr_android_is_available() {
     return g_xr_instance != XR_NULL_HANDLE && g_xr_system != XR_NULL_SYSTEM_ID;
 }
 
+bool xr_android_get_vulkan_instance_extensions(std::string* output) {
+    if (!output || !xr_android_is_available()) return false;
+    PFN_xrGetVulkanInstanceExtensionsKHR fn = nullptr;
+    XrResult r = xrGetInstanceProcAddr(g_xr_instance, "xrGetVulkanInstanceExtensionsKHR",
+                                       reinterpret_cast<PFN_xrVoidFunction*>(&fn));
+    if (XR_FAILED(r) || !fn) return false;
+    uint32_t count = 0;
+    r = fn(g_xr_instance, g_xr_system, 0, &count, nullptr);
+    if (XR_FAILED(r) || !count) return false;
+    std::vector<char> names(count);
+    r = fn(g_xr_instance, g_xr_system, count, &count, names.data());
+    if (XR_FAILED(r)) return false;
+    *output = names.data();
+    return true;
+}
+bool xr_android_get_vulkan_device_extensions(std::string* output) {
+    if (!output || !xr_android_is_available()) return false;
+    PFN_xrGetVulkanDeviceExtensionsKHR fn = nullptr;
+    XrResult r = xrGetInstanceProcAddr(g_xr_instance, "xrGetVulkanDeviceExtensionsKHR",
+                                       reinterpret_cast<PFN_xrVoidFunction*>(&fn));
+    if (XR_FAILED(r) || !fn) return false;
+    uint32_t count = 0;
+    r = fn(g_xr_instance, g_xr_system, 0, &count, nullptr);
+    if (XR_FAILED(r) || !count) return false;
+    std::vector<char> names(count);
+    r = fn(g_xr_instance, g_xr_system, count, &count, names.data());
+    if (XR_FAILED(r)) return false;
+    *output = names.data();
+    return true;
+}
+
 uint32_t xr_android_vulkan_api_version() {
     return g_vk_api_version;
 }
