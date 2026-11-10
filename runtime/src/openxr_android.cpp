@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+namespace nx::nvn { std::mutex& vk_queue_mutex(); }
+
 namespace {
 XrInstance g_xr_instance = XR_NULL_HANDLE;
 XrSystemId g_xr_system = XR_NULL_SYSTEM_ID;
@@ -324,7 +326,7 @@ bool xr_android_frame_begin() {
  XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};XrFrameState fs{XR_TYPE_FRAME_STATE};
  XrResult r=p_wait(g_xr_session,&wi,&fs);if(XR_FAILED(r)){xr_log("xrWaitFrame failed",r);return false;}
  g_xr_time=fs.predictedDisplayTime;XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
- r=p_frame_begin(g_xr_session,&bi);if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
+ XrResult r; { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); r=p_frame_begin(g_xr_session,&bi); } if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
  g_xr_frame=true;g_xr_render=fs.shouldRender;
  XrViewState vs{XR_TYPE_VIEW_STATE};XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
  li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_local;
@@ -353,7 +355,7 @@ void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,flo
 bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
  if(!g_xr_frame||!g_xr_render||eye>=2||!image||g_xr_acquired[eye])return false;
  XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
- if(XR_FAILED(p_acquire(g_xr_swapchains[eye],&ai,&g_xr_indices[eye])))return false;
+ XrResult acquire_result; { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); acquire_result=p_acquire(g_xr_swapchains[eye],&ai,&g_xr_indices[eye]); } if(XR_FAILED(acquire_result))return false;
  g_xr_acquired[eye]=true;
  XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;
  if(XR_FAILED(p_wait_image(g_xr_swapchains[eye],&wi)))return false;
@@ -365,7 +367,7 @@ void xr_android_frame_end() {
  bool submit=g_xr_render;
  for(uint32_t e=0;e<2;e++){
   if(g_xr_acquired[e]){XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-   if(XR_FAILED(p_release(g_xr_swapchains[e],&ri)))submit=false;g_xr_acquired[e]=false;}else submit=false;
+   XrResult release_result; { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); release_result=p_release(g_xr_swapchains[e],&ri); } if(XR_FAILED(release_result))submit=false;g_xr_acquired[e]=false;}else submit=false;
   pv[e].pose=g_xr_views[e].pose;pv[e].fov=g_xr_views[e].fov;pv[e].subImage.swapchain=g_xr_swapchains[e];
   pv[e].subImage.imageRect.offset={0,0};pv[e].subImage.imageRect.extent={
    int32_t(g_xr_config[e].recommendedImageRectWidth),int32_t(g_xr_config[e].recommendedImageRectHeight)};
@@ -374,7 +376,7 @@ void xr_android_frame_end() {
  const XrCompositionLayerBaseHeader* layers[]={reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer)};
  XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=g_xr_time;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
  ei.layerCount=submit?1:0;ei.layers=submit?layers:nullptr;
- XrResult r=p_frame_end(g_xr_session,&ei);if(XR_FAILED(r))xr_log("xrEndFrame failed",r);
+ XrResult r; { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); r=p_frame_end(g_xr_session,&ei); } if(XR_FAILED(r))xr_log("xrEndFrame failed",r);
  g_xr_frame=false;g_xr_render=false;
 }
 
