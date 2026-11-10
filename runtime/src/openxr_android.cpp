@@ -163,6 +163,8 @@ XrTime g_xr_time=0;
 
 XrActionSet g_xr_action_set=XR_NULL_HANDLE;
 XrAction g_xr_hand_pose=XR_NULL_HANDLE,g_xr_trigger=XR_NULL_HANDLE,g_xr_grip=XR_NULL_HANDLE,g_xr_stick=XR_NULL_HANDLE;
+XrAction g_xr_a=XR_NULL_HANDLE,g_xr_b=XR_NULL_HANDLE,g_xr_x=XR_NULL_HANDLE,g_xr_y=XR_NULL_HANDLE,g_xr_menu=XR_NULL_HANDLE,g_xr_stick_click=XR_NULL_HANDLE;
+bool g_xr_buttons[2][6]={};
 XrSpace g_xr_hand_space[2]={XR_NULL_HANDLE,XR_NULL_HANDLE};
 XrPosef g_xr_head_pose{{0,0,0,1},{0,0,0}};
 XrPosef g_xr_hand_pose_value[2]={{{0,0,0,1},{0,0,0}},{{0,0,0,1},{0,0,0}}};
@@ -170,7 +172,7 @@ bool g_xr_hand_active[2]={};float g_xr_trigger_value[2]={},g_xr_grip_value[2]={}
 PFN_xrCreateActionSet p_create_action_set=nullptr;PFN_xrCreateAction p_create_action=nullptr;
 PFN_xrSuggestInteractionProfileBindings p_suggest_bindings=nullptr;PFN_xrAttachSessionActionSets p_attach_actions=nullptr;
 PFN_xrSyncActions p_sync_actions=nullptr;PFN_xrGetActionStatePose p_get_pose=nullptr;
-PFN_xrGetActionStateFloat p_get_float=nullptr;PFN_xrGetActionStateVector2f p_get_vector=nullptr;
+PFN_xrGetActionStateFloat p_get_float=nullptr;PFN_xrGetActionStateVector2f p_get_vector=nullptr;PFN_xrGetActionStateBoolean p_get_boolean=nullptr;
 PFN_xrCreateActionSpace p_create_action_space=nullptr;PFN_xrLocateSpace p_locate_space=nullptr;
 PFN_xrStringToPath p_string_to_path=nullptr;
 
@@ -204,7 +206,7 @@ bool xr_load_frame_api(){
  xr_load("xrCreateActionSet",p_create_action_set)&&xr_load("xrCreateAction",p_create_action)&&
  xr_load("xrSuggestInteractionProfileBindings",p_suggest_bindings)&&xr_load("xrAttachSessionActionSets",p_attach_actions)&&
  xr_load("xrSyncActions",p_sync_actions)&&xr_load("xrGetActionStatePose",p_get_pose)&&
- xr_load("xrGetActionStateFloat",p_get_float)&&xr_load("xrGetActionStateVector2f",p_get_vector)&&
+ xr_load("xrGetActionStateFloat",p_get_float)&&xr_load("xrGetActionStateVector2f",p_get_vector)&&xr_load("xrGetActionStateBoolean",p_get_boolean)&&
  xr_load("xrCreateActionSpace",p_create_action_space)&&xr_load("xrLocateSpace",p_locate_space)&&
  xr_load("xrStringToPath",p_string_to_path);
 }
@@ -224,13 +226,25 @@ bool xr_make_touch_actions(){
  auto make=[&](const char*n,const char*l,XrActionType t,XrAction*dst){XrActionCreateInfo ci{XR_TYPE_ACTION_CREATE_INFO};
  std::strncpy(ci.actionName,n,XR_MAX_ACTION_NAME_SIZE-1);std::strncpy(ci.localizedActionName,l,XR_MAX_LOCALIZED_ACTION_NAME_SIZE-1);
  ci.actionType=t;ci.countSubactionPaths=2;ci.subactionPaths=hands;return XR_SUCCEEDED(p_create_action(g_xr_action_set,&ci,dst));};
+ if(!make("button_a","A",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_a)||
+ !make("button_b","B",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_b)||
+ !make("button_x","X",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_x)||
+ !make("button_y","Y",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_y)||
+ !make("menu","Menu",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_menu)||
+ !make("stick_click","Stick click",XR_ACTION_TYPE_BOOLEAN_INPUT,&g_xr_stick_click))return false;
  if(!make("hand_pose","Hand pose",XR_ACTION_TYPE_POSE_INPUT,&g_xr_hand_pose)||
  !make("trigger","Trigger",XR_ACTION_TYPE_FLOAT_INPUT,&g_xr_trigger)||
  !make("grip","Grip",XR_ACTION_TYPE_FLOAT_INPUT,&g_xr_grip)||
  !make("thumbstick","Thumbstick",XR_ACTION_TYPE_VECTOR2F_INPUT,&g_xr_stick))return false;
+ XrPath pa{},pb{},px{},py{},pm{},plc{},prc{};
+ const char* button_paths[]={"/user/hand/right/input/a/click","/user/hand/right/input/b/click",
+ "/user/hand/left/input/x/click","/user/hand/left/input/y/click","/user/hand/left/input/menu/click",
+ "/user/hand/left/input/thumbstick/click","/user/hand/right/input/thumbstick/click"};
+ XrPath* button_out[]={&pa,&pb,&px,&py,&pm,&plc,&prc};
+ for(int i=0;i<7;i++)if(XR_FAILED(p_string_to_path(g_xr_instance,button_paths[i],button_out[i])))return false;
  XrActionSuggestedBinding b[]={{g_xr_hand_pose,pose[0]},{g_xr_hand_pose,pose[1]},
  {g_xr_trigger,trigger[0]},{g_xr_trigger,trigger[1]},{g_xr_grip,grip[0]},{g_xr_grip,grip[1]},
- {g_xr_stick,stick[0]},{g_xr_stick,stick[1]}};
+ {g_xr_stick,stick[0]},{g_xr_stick,stick[1]},{g_xr_a,pa},{g_xr_b,pb},{g_xr_x,px},{g_xr_y,py},{g_xr_menu,pm},{g_xr_stick_click,plc},{g_xr_stick_click,prc}};
  XrInteractionProfileSuggestedBinding sb{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};sb.interactionProfile=profile;
  sb.countSuggestedBindings=8;sb.suggestedBindings=b;if(XR_FAILED(p_suggest_bindings(g_xr_instance,&sb)))return false;
  XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};at.countActionSets=1;at.actionSets=&g_xr_action_set;
@@ -250,7 +264,9 @@ void xr_update_tracking(){
  XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};if(XR_SUCCEEDED(p_locate_space(g_xr_hand_space[h],g_xr_local,g_xr_time,&loc))&&(loc.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(loc.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_hand_pose_value[h]=loc.pose;g_xr_hand_active[h]=true;}else g_xr_hand_active[h]=false;}else g_xr_hand_active[h]=false;
  XrActionStateFloat f{XR_TYPE_ACTION_STATE_FLOAT};gi.action=g_xr_trigger;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_trigger_value[h]=f.isActive?f.currentState:0;
  gi.action=g_xr_grip;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_grip_value[h]=f.isActive?f.currentState:0;
- XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};}
+ XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};
+  XrActionStateBoolean bs{XR_TYPE_ACTION_STATE_BOOLEAN};XrAction face[6]={g_xr_a,g_xr_b,g_xr_x,g_xr_y,g_xr_menu,g_xr_stick_click};
+  for(int k=0;k<6;k++){gi.action=face[k];if(XR_SUCCEEDED(p_get_boolean(g_xr_session,&gi,&bs)))g_xr_buttons[h][k]=bs.isActive&&bs.currentState;}}
 }
 
 bool xr_create_stereo(){
@@ -320,7 +336,7 @@ void xr_android_eye_extent(uint32_t eye,uint32_t* width,uint32_t* height) {
  if(height)*height=g_xr_config[eye].recommendedImageRectHeight;
 }
 void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,float* left_rot,
- float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active) {
+ float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active,uint64_t* buttons) {
  auto cp=[](const XrPosef&p,float*pos,float*rot){
   if(pos){pos[0]=p.position.x;pos[1]=p.position.y;pos[2]=p.position.z;}
   if(rot){rot[0]=p.orientation.x;rot[1]=p.orientation.y;rot[2]=p.orientation.z;rot[3]=p.orientation.w;}
@@ -328,7 +344,7 @@ void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,flo
  cp(g_xr_head_pose,head_pos,head_rot);cp(g_xr_hand_pose_value[0],left_pos,left_rot);cp(g_xr_hand_pose_value[1],right_pos,right_rot);
  for(int h=0;h<2;h++){if(triggers)triggers[h]=g_xr_trigger_value[h];if(grips)grips[h]=g_xr_grip_value[h];
   if(sticks){sticks[h*2]=g_xr_stick_value[h].x;sticks[h*2+1]=g_xr_stick_value[h].y;}
-  if(active)active[h]=g_xr_hand_active[h];}
+  if(active)active[h]=g_xr_hand_active[h];if(buttons){buttons[h]=0;for(int k=0;k<6;k++)if(g_xr_buttons[h][k])buttons[h]|=(1ull<<k);}}
 }
 bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
  if(!g_xr_frame||!g_xr_render||eye>=2||!image||g_xr_acquired[eye])return false;
