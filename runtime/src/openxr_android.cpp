@@ -425,13 +425,17 @@ bool xr_android_initialize(android_app* app) {
 
     // Android instance creation is mandatory on Android; Vulkan enable2 is the intended renderer bridge.
     if (!has_extension(extensions, XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME) ||
+        !has_extension(extensions, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME) ||
         !has_extension(extensions, XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME)) {
-        xr_log("Runtime lacks XR_KHR_android_create_instance or XR_KHR_vulkan_enable2");
+        xr_log("Runtime lacks XR_KHR_android_create_instance, XR_KHR_vulkan_enable, or XR_KHR_vulkan_enable2");
         return false;
     }
 
+    // The legacy Vulkan-enable extension supplies the runtime-required Vulkan extension lists;
+    // Vulkan-enable2 supplies the XR-mediated vkCreateInstance/vkCreateDevice entry points.
     const char* enabled[] = {
         XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
+        XR_KHR_VULKAN_ENABLE_EXTENSION_NAME,
         XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME
     };
     XrInstanceCreateInfoAndroidKHR android_info{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
