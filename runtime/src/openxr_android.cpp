@@ -110,8 +110,79 @@ bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_de
     ci.next = &binding;
     ci.systemId = g_xr_system;
     XrResult r = xrCreateSession(g_xr_instance, &ci, &g_xr_session);
-    if (XR_FAILED(r)) xr_log("xrCreateSession failed", r);
-    return XR_SUCCEEDED(r);
+    if (XR_FAILED(r)) { xr_log("xrCreateSession failed", r); return false; }
+    if (!xr_load_frame_api() || !xr_create_stereo()) { xr_log("OpenXR stereo setup failed"); return false; }
+    xr_log("OpenXR stereo swapchains and reference spaces initialized");
+    return true;
+}
+
+
+namespace {
+bool g_xr_running=false,g_xr_frame=false,g_xr_render=false;
+XrSessionState g_xr_state=XR_SESSION_STATE_UNKNOWN;
+XrSpace g_xr_local=XR_NULL_HANDLE,g_xr_view=XR_NULL_HANDLE;
+XrViewConfigurationView g_xr_config[2]={{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};
+XrView g_xr_views[2]={{XR_TYPE_VIEW},{XR_TYPE_VIEW}};
+XrSwapchain g_xr_swapchains[2]={XR_NULL_HANDLE,XR_NULL_HANDLE};
+std::vector<XrSwapchainImageVulkan2KHR> g_xr_images[2];
+uint32_t g_xr_indices[2]={}; bool g_xr_acquired[2]={};
+XrTime g_xr_time=0;
+PFN_xrPollEvent p_poll=nullptr;
+PFN_xrBeginSession p_begin=nullptr;
+PFN_xrEndSession p_end=nullptr;
+PFN_xrWaitFrame p_wait=nullptr;
+PFN_xrBeginFrame p_frame_begin=nullptr;
+PFN_xrEndFrame p_frame_end=nullptr;
+PFN_xrLocateViews p_locate_views=nullptr;
+PFN_xrCreateReferenceSpace p_create_space=nullptr;
+PFN_xrEnumerateViewConfigurationViews p_enum_views=nullptr;
+PFN_xrEnumerateSwapchainFormats p_enum_formats=nullptr;
+PFN_xrCreateSwapchain p_create_swapchain=nullptr;
+PFN_xrEnumerateSwapchainImages p_enum_images=nullptr;
+PFN_xrAcquireSwapchainImage p_acquire=nullptr;
+PFN_xrWaitSwapchainImage p_wait_image=nullptr;
+PFN_xrReleaseSwapchainImage p_release=nullptr;
+template<class T> bool xr_load(const char* n,T& f) {
+ XrResult r=xrGetInstanceProcAddr(g_xr_instance,n,reinterpret_cast<PFN_xrVoidFunction*>(&f));
+ if(XR_FAILED(r)||!f){xr_log(n,r);return false;} return true;
+}
+bool xr_load_frame_api(){
+ return xr_load("xrPollEvent",p_poll)&&xr_load("xrBeginSession",p_begin)&&xr_load("xrEndSession",p_end)&&
+ xr_load("xrWaitFrame",p_wait)&&xr_load("xrBeginFrame",p_frame_begin)&&xr_load("xrEndFrame",p_frame_end)&&
+ xr_load("xrLocateViews",p_locate_views)&&xr_load("xrCreateReferenceSpace",p_create_space)&&
+ xr_load("xrEnumerateViewConfigurationViews",p_enum_views)&&xr_load("xrEnumerateSwapchainFormats",p_enum_formats)&&
+ xr_load("xrCreateSwapchain",p_create_swapchain)&&xr_load("xrEnumerateSwapchainImages",p_enum_images)&&
+ xr_load("xrAcquireSwapchainImage",p_acquire)&&xr_load("xrWaitSwapchainImage",p_wait_image)&&
+ xr_load("xrReleaseSwapchainImage",p_release);
+}
+bool xr_create_stereo(){
+ uint32_t n=0; XrResult r=p_enum_views(g_xr_instance,g_xr_system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&n,nullptr);
+ if(XR_FAILED(r)||n!=2)return false;
+ r=p_enum_views(g_xr_instance,g_xr_system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,2,&n,g_xr_config);
+ if(XR_FAILED(r))return false;
+ XrReferenceSpaceCreateInfo ri{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+ ri.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_LOCAL;ri.poseInReferenceSpace.orientation.w=1;
+ if(XR_FAILED(p_create_space(g_xr_session,&ri,&g_xr_local)))return false;
+ ri.referenceSpaceType=XR_REFERENCE_SPACE_TYPE_VIEW;
+ if(XR_FAILED(p_create_space(g_xr_session,&ri,&g_xr_view)))return false;
+ uint32_t fc=0;r=p_enum_formats(g_xr_session,0,&fc,nullptr);if(XR_FAILED(r)||!fc)return false;
+ std::vector<int64_t> formats(fc);r=p_enum_formats(g_xr_session,fc,&fc,formats.data());if(XR_FAILED(r))return false;
+ int64_t fmt=0;for(auto f:formats)if(f==VK_FORMAT_R8G8B8A8_UNORM){fmt=f;break;}
+ if(!fmt)for(auto f:formats)if(f==VK_FORMAT_B8G8R8A8_UNORM){fmt=f;break;}
+ if(!fmt)return false;
+ for(uint32_t e=0;e<2;e++){
+  XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+  ci.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+  ci.format=fmt;ci.sampleCount=1;ci.width=g_xr_config[e].recommendedImageRectWidth;
+  ci.height=g_xr_config[e].recommendedImageRectHeight;ci.faceCount=1;ci.arraySize=1;ci.mipCount=1;
+  r=p_create_swapchain(g_xr_session,&ci,&g_xr_swapchains[e]);if(XR_FAILED(r))return false;
+  uint32_t count=0;r=p_enum_images(g_xr_swapchains[e],0,&count,nullptr);if(XR_FAILED(r)||!count)return false;
+  g_xr_images[e].assign(count,{XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR});
+  r=p_enum_images(g_xr_swapchains[e],count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(g_xr_images[e].data()));
+  if(XR_FAILED(r))return false;
+ }
+ return true;
+}
 }
 
 // Called from android_main after the NativeActivity is available. This deliberately stops at
