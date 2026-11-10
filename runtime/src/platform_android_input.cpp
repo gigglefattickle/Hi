@@ -212,6 +212,8 @@ void read_pad(PadState& p) {
         xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons);
         if (active[0] || active[1]) {
             g_gamepad = g_pad_connected = true;
+            xr_left_active = active[0];
+            xr_right_active = active[1];
             if (active[0]) {
                 xr_pad.lx = int32_t(std::clamp(sticks[0], -1.f, 1.f) * kStickMax);
                 xr_pad.ly = int32_t(std::clamp(sticks[1], -1.f, 1.f) * kStickMax);
