@@ -33,6 +33,12 @@
 
 #if defined(__ANDROID__)
 bool xr_android_is_available();
+bool xr_android_frame_begin();
+bool xr_android_acquire_eye(uint32_t eye, VkImage* image);
+void xr_android_eye_extent(uint32_t eye, uint32_t* width, uint32_t* height);
+void xr_android_frame_end();
+void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,bool*);
+
 uint32_t xr_android_vulkan_api_version();
 bool xr_android_create_vulkan_instance(PFN_vkGetInstanceProcAddr, const VkInstanceCreateInfo*, VkInstance*, VkResult*);
 bool xr_android_get_vulkan_physical_device(VkInstance, VkPhysicalDevice*);
@@ -1298,6 +1304,46 @@ struct PresentParts {
 // the submit and the present.
 template <class Record>
 void present_image(const int32_t* crop, Record&& record) {
+#if defined(__ANDROID__)
+    if (xr_android_is_available()) {
+        const bool should_render = xr_android_frame_begin();
+        if (!should_render) { xr_android_frame_end(); return; }
+        if (!begin()) { xr_android_frame_end(); return; }
+        bool real = true;
+        GpuImage* src = record(g_cb, real);
+        VkImage eyes[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        const bool acquired = src && xr_android_acquire_eye(0, &eyes[0]) &&
+                              xr_android_acquire_eye(1, &eyes[1]);
+        if (acquired) {
+            const VkImageLayout old_layout = src->layout;
+            transition(g_cb, *src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            for (uint32_t eye = 0; eye < 2; ++eye) {
+                uint32_t width = 0, height = 0;
+                xr_android_eye_extent(eye, &width, &height);
+                GpuImage dst;
+                dst.image = eyes[eye];
+                dst.width = width;
+                dst.height = height;
+                dst.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                transition(g_cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                VkImageBlit blit{};
+                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                blit.srcOffsets[1] = {int32_t(src->width), int32_t(src->height), 1};
+                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                blit.dstOffsets[1] = {int32_t(width), int32_t(height), 1};
+                p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                 dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+                transition(g_cb, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            }
+            transition(g_cb, *src, old_layout);
+            end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+        } else {
+            if (g_cb) end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+        }
+        xr_android_frame_end();
+        return;
+    }
+#endif
     presenter_wait();
     if (!g_swapchain) return;
     uint32_t index = 0;
