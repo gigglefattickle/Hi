@@ -156,6 +156,7 @@ bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_de
 
 namespace {
 std::atomic<bool> g_xr_running{false};
+std::atomic<bool> g_xr_setup_complete{false};
 bool g_xr_frame=false,g_xr_render=false;
 XrSessionState g_xr_state=XR_SESSION_STATE_UNKNOWN;
 XrSpace g_xr_local=XR_NULL_HANDLE,g_xr_view=XR_NULL_HANDLE;
@@ -308,7 +309,7 @@ bool xr_create_stereo(){
 
 
 bool xr_android_poll_events() {
- if(g_xr_session==XR_NULL_HANDLE||!p_poll)return false;
+ if(!g_xr_setup_complete.load(std::memory_order_acquire)||g_xr_session==XR_NULL_HANDLE||!p_poll)return false;
  XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
  while(p_poll(g_xr_instance,&event)==XR_SUCCESS){
   if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED){
