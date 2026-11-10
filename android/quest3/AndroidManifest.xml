@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Standalone Quest 3 build. The phone app manifest remains unchanged. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="io.github.acnhrecomp.quest3"
+          android:versionCode="1" android:versionName="dev">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35"/>
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="true"/>
+    <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true"/>
+    <uses-feature android:glEsVersion="0x00030000" android:required="true"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <queries>
+        <package android:name="com.instagram.android"/>
+        <package android:name="com.github.android"/>
+    </queries>
+    <application android:label="ACNH VR" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:hasCode="true" android:extractNativeLibs="true"
+                 android:isGame="true" android:appCategory="game" android:largeHeap="true"
+                 android:requestLegacyExternalStorage="true">
+        <activity android:name="io.github.acnhrecomp.Home" android:exported="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|density|navigation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/>
+        </activity>
+        <activity android:name="io.github.acnhrecomp.Picker" android:exported="false"
+                  android:theme="@android:style/Theme.Translucent.NoTitleBar"
+                  android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|density|navigation"/>
+        <activity android:name="android.app.NativeActivity" android:exported="true"
+                  android:screenOrientation="sensorLandscape" android:resizeableActivity="false"
+                  android:configChanges="orientation|keyboardHidden|keyboard|screenSize|screenLayout|smallestScreenSize|uiMode|density|navigation"
+                  android:theme="@style/Game">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="com.oculus.intent.category.VR"/>
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD"/>
+            </intent-filter>
+            <meta-data android:name="android.app.lib_name" android:value="acnh"/>
+            <meta-data android:name="com.oculus.vr.focusaware" android:value="true"/>
+            <meta-data android:name="android.max_aspect" android:value="3.0"/>
+        </activity>
+    </application>
+</manifest>
