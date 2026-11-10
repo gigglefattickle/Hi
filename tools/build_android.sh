@@ -4,7 +4,8 @@
 # goes into the game folder on the phone with the data (tools/push_android.sh), never into the APK. Packs the APK,
 # signs it with a local debug key and, with --install, installs it on the phone connected by adb.
 #
-# usage: tools/build_android.sh [--install] [--jobs N] [--no-game]
+# usage: tools/build_android.sh [--install] [--jobs N] [--no-game] [--quest3]
+#   --quest3: build a separate ACNH VR app with its own package ID and APK
 #   --no-game: the app only, without the game set up here (what a release carries)
 #   the Vulkan headers: private/third_party/Vulkan-Headers-1.4.357 (tools/setup_acnh.sh; the NDK's are older than
 #   what the runtime calls)
@@ -25,6 +26,9 @@ if [ -z "${JAVA_HOME:-}" ] && [ -d /opt/homebrew/opt/openjdk@17 ]; then export J
 BUILD=private/$GAME/build-android
 OUT=private/$GAME/apk
 INSTALL=0
+QUEST3=0
+MANIFEST=android/AndroidManifest.xml
+APK_NAME=$GAME.apk
 # Compile jobs: the cores, as many as the free memory holds (~700 MB each, as tools/setup_acnh.py counts them);
 # --jobs or JOBS= to choose.
 if [ -n "${JOBS:-}" ]; then :
@@ -46,15 +50,27 @@ while [ $# -gt 0 ]; do
     --install) INSTALL=1 ;;
     --jobs) JOBS=$2; shift ;;
     --no-game) GAMELIB=0 ;;
+    --quest3) QUEST3=1 ;;
     *) echo "unknown option $1"; exit 1 ;;
   esac
   shift
 done
+if [ $QUEST3 = 1 ]; then
+  BUILD=private/$GAME/build-android-quest3
+  OUT=private/$GAME/apk-quest3
+  MANIFEST=android/quest3/AndroidManifest.xml
+  APK_NAME=acnh-vr.apk
+fi
 [ -d "$NDK" ] || { echo "NDK not found: $NDK"; exit 1; }
 GEN=$PWD/private/$GAME/gen
 if [ $GAMELIB = 0 ]; then
-  BUILD=private/$GAME/build-android-app
-  OUT=private/$GAME/apk-app
+  if [ $QUEST3 = 1 ]; then
+    BUILD=private/$GAME/build-android-quest3-app
+    OUT=private/$GAME/apk-quest3-app
+  else
+    BUILD=private/$GAME/build-android-app
+    OUT=private/$GAME/apk-app
+  fi
   GEN=$PWD/$BUILD/no-gen
 elif [ ! -d "$GEN/main" ]; then
   echo "the game is not set up on this computer (python3 tools/setup_acnh.py --game <folder>); --no-game: the app only"
@@ -108,7 +124,7 @@ VNAME=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); VNAME=${VNAM
 IFS=. read -r VMAJ VMIN VPAT <<<"${VNAME%%-*}"
 VCODE=$(( ${VMAJ:-0} * 10000 + ${VMIN:-0} * 100 + ${VPAT:-0} ))
 echo "APK version $VNAME ($VCODE)"
-"$BT/aapt2" link -o "$OUT/base.apk" --manifest android/AndroidManifest.xml -I "$PLATFORM" "$OUT/res.zip" \
+"$BT/aapt2" link -o "$OUT/base.apk" --manifest "$MANIFEST" -I "$PLATFORM" "$OUT/res.zip" \
   --version-name "$VNAME" --version-code "$VCODE" --replace-version
 # The pt-BR translation and the SpeedFix files as assets, which the app copies into the game folder (mod_fetch.cpp).
 rm -rf "${OUT:?}/assets"
@@ -118,10 +134,10 @@ tools/bundle_mods.sh "$OUT/assets"
 KEY=private/android-debug.keystore
 [ -f "$KEY" ] || keytool -genkeypair -keystore "$KEY" -storepass android -keypass android -alias debug \
   -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ACNH Recomp debug" >/dev/null 2>&1
-"$BT/apksigner" sign --ks "$KEY" --ks-pass pass:android --out "$OUT/$GAME.apk" "$OUT/aligned.apk"
-ls -la "$OUT/$GAME.apk"
+"$BT/apksigner" sign --ks "$KEY" --ks-pass pass:android --out "$OUT/$APK_NAME" "$OUT/aligned.apk"
+ls -la "$OUT/$APK_NAME"
 
 if [ $INSTALL = 1 ]; then
   echo "== install"
-  adb install -r "$OUT/$GAME.apk"
+  adb install -r "$OUT/$APK_NAME"
 fi
