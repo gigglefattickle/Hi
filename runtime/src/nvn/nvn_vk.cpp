@@ -39,7 +39,6 @@ bool xr_android_frame_begin();
 bool xr_android_acquire_eye(uint32_t eye, VkImage* image);
 void xr_android_eye_extent(uint32_t eye, uint32_t* width, uint32_t* height);
 void xr_android_frame_end();
-void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,bool*);
 
 uint32_t xr_android_vulkan_api_version();
 bool xr_android_create_vulkan_instance(PFN_vkGetInstanceProcAddr, const VkInstanceCreateInfo*, VkInstance*, VkResult*);
