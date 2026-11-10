@@ -1100,7 +1100,7 @@ static void pgo_writer(void*) {
 }
 #endif
 
-extern "C" bool xr_android_initialize(android_app* app);
+bool xr_android_initialize(android_app* app);
 
 extern "C" void android_main(android_app* app) {
     using namespace nx::plat;
