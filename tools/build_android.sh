@@ -91,6 +91,10 @@ javac -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$PLATFORM" -cl
   -d "$OUT/classes" $(find android/java -name "*.java")
 "$BT/d8" --release --min-api 29 --lib "$PLATFORM" --output "$OUT" $(find "$OUT/classes" -name "*.class")
 # libadrenotools' hook libraries, and Turnip when it was built (tools/build_turnip.sh): the Adreno driver it loads.
+# The Khronos OpenXR loader is bundled in the APK (Meta Quest requires loader 1.0.34+).
+XR_LOADER=$(find "$BUILD" -type f -name libopenxr_loader.so -print -quit)
+[ -n "$XR_LOADER" ] || { echo "OpenXR loader was not built"; exit 1; }
+cp "$XR_LOADER" "$OUT/lib/arm64-v8a/"
 cp $(find "$BUILD/_deps" -name "lib*hook*.so") "$OUT/lib/arm64-v8a/"
 TURNIP=private/third_party/mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so
 [ -f "$TURNIP" ] && cp "$TURNIP" "$OUT/lib/arm64-v8a/" || echo "(no Turnip: tools/build_turnip.sh; the phone's driver is used)"
