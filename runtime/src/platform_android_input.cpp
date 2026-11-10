@@ -47,7 +47,7 @@
 #include "ui/ui.h"
 
 bool xr_android_is_available();
-void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,uint64_t*);
+void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,uint64_t*,bool*);
 
 // Android input: game controllers and touch (split from platform_android.cpp).
 namespace nx::plat {
