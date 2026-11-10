@@ -67,9 +67,18 @@ Do not introduce distance-based object culling as part of the initial XR bring-u
 6. **Quest package:** arm64 APK has the immersive-HMD launcher category, packages the Khronos loader, and installs/launches on Quest 3.
 7. **Performance pass:** profile a repeatable scene on Quest 3, then optimize measured bottlenecks without hiding important objects.
 
-## Current status
+## Current implementation status
 
-This is an engineering plan, not a claim that VR has been implemented. The repository has the Android phone runtime and Vulkan renderer, but no OpenXR loader, XR session, stereo projection layer, or tracked controller action set yet. A Quest 3 device run is required to validate runtime startup, graphics binding, frame pacing, and controller tracking.
+The first native bootstrap increment is now in the branch:
+
+- `runtime/src/openxr_android.cpp` initializes the Khronos Android loader with the NativeActivity VM/context, checks for `XR_KHR_android_create_instance` and `XR_KHR_vulkan_enable2`, creates an OpenXR instance, and discovers the HMD system.
+- `CMakeLists.txt` fetches Khronos OpenXR-SDK 1.1.58 and links the loader into the Android runtime.
+- `tools/build_android.sh` packages `libopenxr_loader.so` into the ARM64 APK.
+- `platform_android.cpp` runs the loader bootstrap before game startup. If no runtime is available, the existing flat-screen path remains the fallback.
+
+**Not implemented yet:** Vulkan instance/device creation through `XR_KHR_vulkan_enable2`, `XrSession` creation, OpenXR frame loop, per-eye swapchains/projection layer, head-pose camera integration, Touch controller actions, and the Quest immersive launcher manifest. This is therefore not yet a playable VR build and no APK has been verified.
+
+The next code milestone is to make `nvn_vk.cpp` obtain its Vulkan instance, XR-selected physical device, and logical device through OpenXR while preserving the existing feature chain. Only then can the session use the exact game device. A Quest 3 device run remains necessary to validate runtime startup, graphics binding, frame pacing, and controller tracking.
 
 ## References
 
