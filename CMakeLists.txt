@@ -366,6 +366,22 @@ string(SHA1 NX_GAME_ABI "${NX_ABI_TEXT}")
 string(SUBSTRING "${NX_GAME_ABI}" 0 12 NX_GAME_ABI)
 
 if(ANDROID)
+    # Khronos OpenXR Android loader (Meta Quest requires Khronos loader >= 1.0.34).
+    # Build only the loader; application code uses its public headers and the Android runtime.
+    include(FetchContent)
+    set(BUILD_LOADER ON CACHE BOOL "" FORCE)
+    set(DYNAMIC_LOADER ON CACHE BOOL "" FORCE)
+    set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SDK_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_CONFORMANCE_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_ALL_EXTENSIONS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(openxr_sdk
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
+        GIT_TAG release-1.1.58
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(openxr_sdk)
+
     # NativeActivity app: lib<game>.so, entry android_main (android_native_app_glue).
     set(GLUE "${ANDROID_NDK}/sources/android/native_app_glue")
     add_library(${NX_GAME} SHARED ${NX_RUNTIME_SOURCES} runtime/src/platform_android.cpp
@@ -375,7 +391,7 @@ if(ANDROID)
     # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
     set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
         COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
-    target_link_libraries(${NX_GAME} PRIVATE android log aaudio)
+    target_link_libraries(${NX_GAME} PRIVATE android log aaudio openxr_loader)
     # NX_ANDROID_GAME_IN_APP=ON: the game's code linked into lib<game>.so as before (comparisons; never published).
     option(NX_ANDROID_GAME_IN_APP "Link the game's code into the app's library" OFF)
     if(NX_ANDROID_GAME_IN_APP)
