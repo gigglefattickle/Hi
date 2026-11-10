@@ -8,7 +8,7 @@ This document records the implementation boundary for a native Quest 3 build. It
 - `runtime/src/platform_android.cpp` owns the Android native app glue, activity/window lifecycle, Vulkan loader selection, and Android Vulkan surface creation.
 - `runtime/src/nvn/nvn_vk.cpp` owns the Vulkan instance, physical device, logical device, graphics queue, Android `VkSurfaceKHR`, `VkSwapchainKHR`, and presentation.
 - `runtime/src/nvn/nvn_draw.cpp` replays the game's NVN command lists into Vulkan render passes.
-- `runtime/src/platform_android_input.cpp` currently maps Android gamepad/touch events to the game's conventional pad state. It does not expose tracked controller poses or OpenXR actions.
+- `runtime/src/platform_android_input.cpp` maps Android gamepad/touch events and now also maps OpenXR Touch actions into the game's conventional pad state.
 
 The existing Android path is a flat-screen Vulkan presentation path. Adding only the OpenXR loader or the immersive-HMD manifest category would not make the renderer stereo.
 
@@ -43,7 +43,7 @@ The existing `VkSurfaceKHR` / `VkSwapchainKHR` path and `vkQueuePresentKHR` pres
 - obey `xrWaitFrame`, `xrBeginFrame`, and `xrEndFrame` pacing;
 - handle session stop/loss and Android window/activity recreation.
 
-The current flat Android swapchain remains available for the non-Quest build.
+The existing Android surface path remains as a fallback when no OpenXR runtime is available. On the Quest path, game frames are copied into the two OpenXR eye swapchains and submitted as a projection layer.
 
 ### 4. Camera and world scale
 
@@ -51,7 +51,7 @@ Use OpenXR's located view poses and FOVs to build left/right camera matrices. Ke
 
 ### 5. Quest Touch controller actions
 
-Create an OpenXR action set for left/right controller poses, aim poses, trigger, grip, face buttons, thumbsticks, and haptics. Translate button states into the existing `PadState` where that is semantically appropriate, and expose tracked hand/controller poses separately for future VR interaction. Do not treat a controller's Android gamepad event as a tracked pose.
+Create an OpenXR action set for left/right controller poses, trigger, grip, face buttons, thumbsticks, and stick clicks. Translate button states into the existing `PadState` where that is semantically appropriate, and expose tracked controller poses separately for VR interaction. Do not treat a controller's Android gamepad event as a tracked pose.
 
 ### 6. Performance and visibility
 
@@ -69,18 +69,20 @@ Do not introduce distance-based object culling as part of the initial XR bring-u
 
 ## Current implementation status
 
-The first native bootstrap and shared-device increment are now in the branch:
+The branch now contains a first end-to-end OpenXR presentation and input path:
 
-- `runtime/src/openxr_android.cpp` initializes the Khronos Android loader with the NativeActivity VM/context, checks for `XR_KHR_android_create_instance` and `XR_KHR_vulkan_enable2`, creates an OpenXR instance, and discovers the HMD system.
-- `CMakeLists.txt` fetches Khronos OpenXR-SDK 1.1.58 and links the loader into the Android runtime.
-- `tools/build_android.sh` packages `libopenxr_loader.so` into the ARM64 APK.
-- `platform_android.cpp` runs the loader bootstrap before game startup. If no runtime is available, the existing flat-screen path remains the fallback.
-- `runtime/src/openxr_android.cpp` now queries the runtime's Vulkan version range and exposes wrappers for `xrCreateVulkanInstanceKHR`, `xrGetVulkanGraphicsDevice2KHR`, `xrCreateVulkanDeviceKHR`, and `xrCreateSession`.
-- `runtime/src/nvn/nvn_vk.cpp` uses those wrappers on Android when OpenXR initialized successfully. It preserves the existing Vulkan feature chain and queue selection, then creates an `XrSession` using the same Vulkan instance, physical device, logical device, and queue as the game.
+- `runtime/src/openxr_android.cpp` initializes the Khronos Android loader, enables `XR_KHR_android_create_instance`, `XR_KHR_vulkan_enable`, and `XR_KHR_vulkan_enable2`, discovers the HMD, queries runtime-required Vulkan extensions, and creates the OpenXR session on the game's Vulkan device.
+- `runtime/src/nvn/nvn_vk.cpp` creates the Vulkan instance/device through OpenXR, creates the session, polls the frame timing, acquires both eye images, copies the current game frame to each eye, and submits a two-view projection layer.
+- The session state handler begins on `XR_SESSION_STATE_READY` and ends on `XR_SESSION_STATE_STOPPING`. Android's main loop polls OpenXR events.
+- Two primary-stereo swapchains are created using the runtime's recommended per-eye dimensions. The frame loop uses `xrWaitFrame`, `xrBeginFrame`, `xrLocateViews`, `xrAcquireSwapchainImage`, `xrReleaseSwapchainImage`, and `xrEndFrame`.
+- Headset view poses and left/right Touch controller poses are sampled. Touch trigger, grip, thumbstick, face buttons, menu, and stick-click actions are mapped into the game's existing pad input.
+- OpenXR queue-access calls are synchronized with the renderer's Vulkan queue mutex.
 
-**Not implemented yet:** processing OpenXR session-state events and beginning the session, OpenXR frame loop, per-eye swapchains/projection layer, head-pose camera integration, Touch controller actions, and the Quest immersive launcher manifest. The current code creates the shared Vulkan objects and an `XrSession`, but does not yet submit XR frames. This is therefore not yet a playable VR build and no APK has been verified.
+**Important visual limitation:** both eye swapchains currently receive the same already-rendered game image. This gives the runtime two valid eye images and a projection-layer submission, but it is not true geometry-based stereoscopic rendering. The game's scene is not yet rendered twice from separate left/right camera matrices, and the tracked head pose has not yet been applied to the game's world camera. Controller inputs are mapped, while tracked controller poses are exposed for the next interaction/camera integration step.
 
-The next code milestone is the OpenXR frame loop and stereo swapchains, followed by head-pose camera integration. A Quest 3 device run remains necessary to validate runtime startup, graphics binding, frame pacing, and controller tracking.
+**Build status:** source changes have been committed, but no Android build or Quest 3 hardware test has been run. No APK is verified. A local ARM64 build and on-device runtime validation are still required.
+
+The next visual milestone is true per-eye game rendering with separate camera view/projection matrices and the tracked head pose, rather than copying one flat image to both eyes.
 
 ## References
 
