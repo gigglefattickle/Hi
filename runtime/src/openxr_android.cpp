@@ -42,41 +42,42 @@ uint32_t xr_android_vulkan_api_version() {
     return g_vk_api_version;
 }
 
-bool xr_android_create_vulkan_instance(void* gipa_ptr, void* vk_ci_ptr, void* instance_ptr, void* vk_result_ptr) {
-    if (!xr_android_is_available() || !gipa_ptr || !vk_ci_ptr || !instance_ptr || !vk_result_ptr) return false;
+bool xr_android_create_vulkan_instance(PFN_vkGetInstanceProcAddr gipa, const VkInstanceCreateInfo* vk_ci,
+                                       VkInstance* instance, VkResult* vk_result) {
+    if (!xr_android_is_available() || !gipa || !vk_ci || !instance || !vk_result) return false;
     PFN_xrCreateVulkanInstanceKHR create = nullptr;
     XrResult r = xrGetInstanceProcAddr(g_xr_instance, "xrCreateVulkanInstanceKHR",
                                        reinterpret_cast<PFN_xrVoidFunction*>(&create));
     if (XR_FAILED(r) || !create) return false;
     XrVulkanInstanceCreateInfoKHR ci{XR_TYPE_VULKAN_INSTANCE_CREATE_INFO_KHR};
     ci.systemId = g_xr_system;
-    ci.pfnGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(gipa_ptr);
-    ci.vulkanCreateInfo = static_cast<const VkInstanceCreateInfo*>(vk_ci_ptr);
-    r = create(g_xr_instance, &ci, static_cast<VkInstance*>(instance_ptr), static_cast<VkResult*>(vk_result_ptr));
-    if (XR_FAILED(r) || *static_cast<VkResult*>(vk_result_ptr) != VK_SUCCESS) {
+    ci.pfnGetInstanceProcAddr = gipa;
+    ci.vulkanCreateInfo = vk_ci;
+    r = create(g_xr_instance, &ci, instance, vk_result);
+    if (XR_FAILED(r) || *vk_result != VK_SUCCESS) {
         xr_log("xrCreateVulkanInstanceKHR failed", r);
         return false;
     }
     return true;
 }
 
-bool xr_android_get_vulkan_physical_device(void* instance_ptr, void* physical_ptr) {
-    if (!xr_android_is_available() || !instance_ptr || !physical_ptr) return false;
+bool xr_android_get_vulkan_physical_device(VkInstance instance, VkPhysicalDevice* physical_device) {
+    if (!xr_android_is_available() || instance == VK_NULL_HANDLE || !physical_device) return false;
     PFN_xrGetVulkanGraphicsDevice2KHR get_device = nullptr;
     XrResult r = xrGetInstanceProcAddr(g_xr_instance, "xrGetVulkanGraphicsDevice2KHR",
                                        reinterpret_cast<PFN_xrVoidFunction*>(&get_device));
     if (XR_FAILED(r) || !get_device) return false;
     XrVulkanGraphicsDeviceGetInfoKHR info{XR_TYPE_VULKAN_GRAPHICS_DEVICE_GET_INFO_KHR};
     info.systemId = g_xr_system;
-    info.vulkanInstance = *static_cast<VkInstance*>(instance_ptr);
-    r = get_device(g_xr_instance, &info, static_cast<VkPhysicalDevice*>(physical_ptr));
+    info.vulkanInstance = instance;
+    r = get_device(g_xr_instance, &info, physical_device);
     if (XR_FAILED(r)) xr_log("xrGetVulkanGraphicsDevice2KHR failed", r);
     return XR_SUCCEEDED(r);
 }
 
-bool xr_android_create_vulkan_device(void* gipa_ptr, void* physical_ptr, void* vk_ci_ptr,
-                                     void* device_ptr, void* vk_result_ptr) {
-    if (!xr_android_is_available() || !gipa_ptr || !physical_ptr || !vk_ci_ptr || !device_ptr || !vk_result_ptr)
+bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice physical_device,
+                                     const VkDeviceCreateInfo* vk_ci, VkDevice* device, VkResult* vk_result) {
+    if (!xr_android_is_available() || !gipa || physical_device == VK_NULL_HANDLE || !vk_ci || !device || !vk_result)
         return false;
     PFN_xrCreateVulkanDeviceKHR create = nullptr;
     XrResult r = xrGetInstanceProcAddr(g_xr_instance, "xrCreateVulkanDeviceKHR",
@@ -84,24 +85,25 @@ bool xr_android_create_vulkan_device(void* gipa_ptr, void* physical_ptr, void* v
     if (XR_FAILED(r) || !create) return false;
     XrVulkanDeviceCreateInfoKHR ci{XR_TYPE_VULKAN_DEVICE_CREATE_INFO_KHR};
     ci.systemId = g_xr_system;
-    ci.pfnGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(gipa_ptr);
-    ci.vulkanPhysicalDevice = *static_cast<VkPhysicalDevice*>(physical_ptr);
-    ci.vulkanCreateInfo = static_cast<const VkDeviceCreateInfo*>(vk_ci_ptr);
-    r = create(g_xr_instance, &ci, static_cast<VkDevice*>(device_ptr), static_cast<VkResult*>(vk_result_ptr));
-    if (XR_FAILED(r) || *static_cast<VkResult*>(vk_result_ptr) != VK_SUCCESS) {
+    ci.pfnGetInstanceProcAddr = gipa;
+    ci.vulkanPhysicalDevice = physical_device;
+    ci.vulkanCreateInfo = vk_ci;
+    r = create(g_xr_instance, &ci, device, vk_result);
+    if (XR_FAILED(r) || *vk_result != VK_SUCCESS) {
         xr_log("xrCreateVulkanDeviceKHR failed", r);
         return false;
     }
     return true;
 }
 
-bool xr_android_create_session(void* instance_ptr, void* physical_ptr, void* device_ptr,
+bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
                                uint32_t queue_family, uint32_t queue_index) {
-    if (!xr_android_is_available() || !instance_ptr || !physical_ptr || !device_ptr) return false;
+    if (!xr_android_is_available() || instance == VK_NULL_HANDLE || physical_device == VK_NULL_HANDLE ||
+        device == VK_NULL_HANDLE) return false;
     XrGraphicsBindingVulkan2KHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR};
-    binding.instance = *static_cast<VkInstance*>(instance_ptr);
-    binding.physicalDevice = *static_cast<VkPhysicalDevice*>(physical_ptr);
-    binding.device = *static_cast<VkDevice*>(device_ptr);
+    binding.instance = instance;
+    binding.physicalDevice = physical_device;
+    binding.device = device;
     binding.queueFamilyIndex = queue_family;
     binding.queueIndex = queue_index;
     XrSessionCreateInfo ci{XR_TYPE_SESSION_CREATE_INFO};
