@@ -96,6 +96,10 @@ bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr gipa, VkPhysicalD
     return true;
 }
 
+bool xr_load_frame_api();
+bool xr_create_stereo();
+bool xr_make_touch_actions();
+
 bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
                                uint32_t queue_family, uint32_t queue_index) {
     if (!xr_android_is_available() || instance == VK_NULL_HANDLE || physical_device == VK_NULL_HANDLE ||
@@ -111,7 +115,7 @@ bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_de
     ci.systemId = g_xr_system;
     XrResult r = xrCreateSession(g_xr_instance, &ci, &g_xr_session);
     if (XR_FAILED(r)) { xr_log("xrCreateSession failed", r); return false; }
-    if (!xr_load_frame_api() || !xr_create_stereo()) { xr_log("OpenXR stereo setup failed"); return false; }
+    if (!xr_load_frame_api() || !xr_create_stereo() || !xr_make_touch_actions()) { xr_log("OpenXR stereo setup failed"); return false; }
     xr_log("OpenXR stereo swapchains and reference spaces initialized");
     return true;
 }
@@ -127,6 +131,20 @@ XrSwapchain g_xr_swapchains[2]={XR_NULL_HANDLE,XR_NULL_HANDLE};
 std::vector<XrSwapchainImageVulkan2KHR> g_xr_images[2];
 uint32_t g_xr_indices[2]={}; bool g_xr_acquired[2]={};
 XrTime g_xr_time=0;
+
+XrActionSet g_xr_action_set=XR_NULL_HANDLE;
+XrAction g_xr_hand_pose=XR_NULL_HANDLE,g_xr_trigger=XR_NULL_HANDLE,g_xr_grip=XR_NULL_HANDLE,g_xr_stick=XR_NULL_HANDLE;
+XrSpace g_xr_hand_space[2]={XR_NULL_HANDLE,XR_NULL_HANDLE};
+XrPosef g_xr_head_pose{{0,0,0,1},{0,0,0}};
+XrPosef g_xr_hand_pose_value[2]={{{0,0,0,1},{0,0,0}},{{0,0,0,1},{0,0,0}}};
+bool g_xr_hand_active[2]={};float g_xr_trigger_value[2]={},g_xr_grip_value[2]={};XrVector2f g_xr_stick_value[2]={};
+PFN_xrCreateActionSet p_create_action_set=nullptr;PFN_xrCreateAction p_create_action=nullptr;
+PFN_xrSuggestInteractionProfileBindings p_suggest_bindings=nullptr;PFN_xrAttachSessionActionSets p_attach_actions=nullptr;
+PFN_xrSyncActions p_sync_actions=nullptr;PFN_xrGetActionStatePose p_get_pose=nullptr;
+PFN_xrGetActionStateFloat p_get_float=nullptr;PFN_xrGetActionStateVector2f p_get_vector=nullptr;
+PFN_xrCreateActionSpace p_create_action_space=nullptr;PFN_xrLocateSpace p_locate_space=nullptr;
+PFN_xrStringToPath p_string_to_path=nullptr;
+
 PFN_xrPollEvent p_poll=nullptr;
 PFN_xrBeginSession p_begin=nullptr;
 PFN_xrEndSession p_end=nullptr;
@@ -153,8 +171,53 @@ bool xr_load_frame_api(){
  xr_load("xrEnumerateViewConfigurationViews",p_enum_views)&&xr_load("xrEnumerateSwapchainFormats",p_enum_formats)&&
  xr_load("xrCreateSwapchain",p_create_swapchain)&&xr_load("xrEnumerateSwapchainImages",p_enum_images)&&
  xr_load("xrAcquireSwapchainImage",p_acquire)&&xr_load("xrWaitSwapchainImage",p_wait_image)&&
- xr_load("xrReleaseSwapchainImage",p_release);
+ xr_load("xrReleaseSwapchainImage",p_release)&&\n xr_load("xrCreateActionSet",p_create_action_set)&&xr_load("xrCreateAction",p_create_action)&&\n xr_load("xrSuggestInteractionProfileBindings",p_suggest_bindings)&&xr_load("xrAttachSessionActionSets",p_attach_actions)&&\n xr_load("xrSyncActions",p_sync_actions)&&xr_load("xrGetActionStatePose",p_get_pose)&&\n xr_load("xrGetActionStateFloat",p_get_float)&&xr_load("xrGetActionStateVector2f",p_get_vector)&&\n xr_load("xrCreateActionSpace",p_create_action_space)&&xr_load("xrLocateSpace",p_locate_space)&&\n xr_load("xrStringToPath",p_string_to_path);
 }
+
+bool xr_make_touch_actions(){
+ XrActionSetCreateInfo si{XR_TYPE_ACTION_SET_CREATE_INFO};std::strncpy(si.actionSetName,"gameplay",XR_MAX_ACTION_SET_NAME_SIZE-1);
+ std::strncpy(si.localizedActionSetName,"Gameplay",XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE-1);
+ if(XR_FAILED(p_create_action_set(g_xr_instance,&si,&g_xr_action_set)))return false;
+ XrPath hands[2]{},profile{},trigger[2]{},grip[2]{},stick[2]{},pose[2]{};
+ const char* names[]={"/user/hand/left","/user/hand/right","/interaction_profiles/oculus/touch_controller",
+ "/user/hand/left/input/trigger/value","/user/hand/right/input/trigger/value",
+ "/user/hand/left/input/squeeze/value","/user/hand/right/input/squeeze/value",
+ "/user/hand/left/input/thumbstick","/user/hand/right/input/thumbstick",
+ "/user/hand/left/input/grip/pose","/user/hand/right/input/grip/pose"};
+ XrPath* out[]={&hands[0],&hands[1],&profile,&trigger[0],&trigger[1],&grip[0],&grip[1],&stick[0],&stick[1],&pose[0],&pose[1]};
+ for(int i=0;i<11;i++)if(XR_FAILED(p_string_to_path(g_xr_instance,names[i],out[i])))return false;
+ auto make=[&](const char*n,const char*l,XrActionType t,XrAction*dst){XrActionCreateInfo ci{XR_TYPE_ACTION_CREATE_INFO};
+ std::strncpy(ci.actionName,n,XR_MAX_ACTION_NAME_SIZE-1);std::strncpy(ci.localizedActionName,l,XR_MAX_LOCALIZED_ACTION_NAME_SIZE-1);
+ ci.actionType=t;ci.countSubactionPaths=2;ci.subactionPaths=hands;return XR_SUCCEEDED(p_create_action(g_xr_action_set,&ci,dst));};
+ if(!make("hand_pose","Hand pose",XR_ACTION_TYPE_POSE_INPUT,&g_xr_hand_pose)||
+ !make("trigger","Trigger",XR_ACTION_TYPE_FLOAT_INPUT,&g_xr_trigger)||
+ !make("grip","Grip",XR_ACTION_TYPE_FLOAT_INPUT,&g_xr_grip)||
+ !make("thumbstick","Thumbstick",XR_ACTION_TYPE_VECTOR2F_INPUT,&g_xr_stick))return false;
+ XrActionSuggestedBinding b[]={{g_xr_hand_pose,pose[0]},{g_xr_hand_pose,pose[1]},
+ {g_xr_trigger,trigger[0]},{g_xr_trigger,trigger[1]},{g_xr_grip,grip[0]},{g_xr_grip,grip[1]},
+ {g_xr_stick,stick[0]},{g_xr_stick,stick[1]}};
+ XrInteractionProfileSuggestedBinding sb{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};sb.interactionProfile=profile;
+ sb.countSuggestedBindings=8;sb.suggestedBindings=b;if(XR_FAILED(p_suggest_bindings(g_xr_instance,&sb)))return false;
+ XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};at.countActionSets=1;at.actionSets=&g_xr_action_set;
+ if(XR_FAILED(p_attach_actions(g_xr_session,&at)))return false;
+ XrActionSpaceCreateInfo ac{XR_TYPE_ACTION_SPACE_CREATE_INFO};ac.action=g_xr_hand_pose;ac.poseInActionSpace.orientation.w=1;
+ for(int h=0;h<2;h++){ac.subactionPath=hands[h];if(XR_FAILED(p_create_action_space(g_xr_session,&ac,&g_xr_hand_space[h])))return false;}
+ return true;
+}
+void xr_update_tracking(){
+ XrActiveActionSet active{g_xr_action_set,XR_NULL_PATH};XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
+ if(XR_FAILED(p_sync_actions(g_xr_session,&si)))return;
+ XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
+ if(XR_SUCCEEDED(p_locate_space(g_xr_view,g_xr_local,g_xr_time,&head))&&(head.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(head.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))g_xr_head_pose=head.pose;
+ XrPath hands[2]{};p_string_to_path(g_xr_instance,"/user/hand/left",&hands[0]);p_string_to_path(g_xr_instance,"/user/hand/right",&hands[1]);
+ for(int h=0;h<2;h++){XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.subactionPath=hands[h];gi.action=g_xr_hand_pose;
+ XrActionStatePose ps{XR_TYPE_ACTION_STATE_POSE};if(XR_SUCCEEDED(p_get_pose(g_xr_session,&gi,&ps))&&ps.isActive){
+ XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};if(XR_SUCCEEDED(p_locate_space(g_xr_hand_space[h],g_xr_local,g_xr_time,&loc))&&(loc.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(loc.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_hand_pose_value[h]=loc.pose;g_xr_hand_active[h]=true;}else g_xr_hand_active[h]=false;}else g_xr_hand_active[h]=false;
+ XrActionStateFloat f{XR_TYPE_ACTION_STATE_FLOAT};gi.action=g_xr_trigger;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_trigger_value[h]=f.isActive?f.currentState:0;
+ gi.action=g_xr_grip;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_grip_value[h]=f.isActive?f.currentState:0;
+ XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};}
+}
+
 bool xr_create_stereo(){
  uint32_t n=0; XrResult r=p_enum_views(g_xr_instance,g_xr_system,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,0,&n,nullptr);
  if(XR_FAILED(r)||n!=2)return false;
