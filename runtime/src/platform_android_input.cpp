@@ -70,6 +70,8 @@ std::vector<Touch> g_touches;
 float g_w = 1, g_h = 1;
 bool g_gamepad = false;  // the last input came from a controller: the drawn touch controls hide
 bool g_pad_connected = false;  // a controller is connected (platform_android.cpp polls the system's input devices)
+float g_xr_head_position[3]{}, g_xr_head_orientation[4]{0,0,0,1};
+bool g_xr_head_valid = false;
 
 uint64_t key_to_button(int32_t k) {
     switch (k) {
@@ -200,6 +202,14 @@ bool headless() {  // NX_HEADLESS (platform.h)
 
 bool read_player_pad(int, PadState&) { return false; }  // player 1 only on this host
 
+bool read_xr_head_pose(float* position, float* orientation) {
+    std::lock_guard lk(g_in);
+    if (!g_xr_head_valid) return false;
+    if (position) std::copy(g_xr_head_position, g_xr_head_position + 3, position);
+    if (orientation) std::copy(g_xr_head_orientation, g_xr_head_orientation + 4, orientation);
+    return true;
+}
+
 void read_pad(PadState& p) {
     std::lock_guard lk(g_in);
     PadState xr_pad;
@@ -210,6 +220,9 @@ void read_pad(PadState& p) {
         bool active[2]{};
         uint64_t buttons[2]{};
         xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons);
+        g_xr_head_valid = true;
+        std::copy(hp, hp + 3, g_xr_head_position);
+        std::copy(hr, hr + 4, g_xr_head_orientation);
         if (active[0] || active[1]) {
             g_gamepad = g_pad_connected = true;
             xr_left_active = active[0];
