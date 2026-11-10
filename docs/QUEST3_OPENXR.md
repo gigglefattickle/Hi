@@ -1,4 +1,7 @@
-# Quest 3 OpenXR port: renderer integration plan
+# Quest 3 OpenXR app: renderer integration plan
+
+The Quest build is a separate Android application (`io.github.acnhrecomp.quest3`, displayed as **ACNH VR**) and produces `acnh-vr.apk`. It uses `android/quest3/AndroidManifest.xml`; the existing phone app keeps `android/AndroidManifest.xml`, its original package ID, and its existing build output. Build the standalone Quest app with `tools/build_android.sh --quest3 --no-game --jobs 2`. The Quest app has its own Android app data directory, so its game-folder selection and saved app settings are separate from the phone app.
+
 
 This document records the implementation boundary for a native Quest 3 build. It is deliberately separate from the existing Android phone build until the XR renderer is complete; the phone APK must continue to launch normally.
 
