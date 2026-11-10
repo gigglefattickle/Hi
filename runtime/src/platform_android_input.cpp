@@ -46,6 +46,9 @@
 #include "touch_layout.h"
 #include "ui/ui.h"
 
+bool xr_android_is_available();
+void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,uint64_t*);
+
 // Android input: game controllers and touch (split from platform_android.cpp).
 namespace nx::plat {
 
@@ -199,6 +202,35 @@ bool read_player_pad(int, PadState&) { return false; }  // player 1 only on this
 
 void read_pad(PadState& p) {
     std::lock_guard lk(g_in);
+    if (xr_android_is_available()) {
+        float hp[3]{}, hr[4]{}, lp[3]{}, lr[4]{}, rp[3]{}, rr[4]{};
+        float triggers[2]{}, grips[2]{}, sticks[4]{};
+        bool active[2]{};
+        uint64_t buttons[2]{};
+        xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons);
+        if (active[0] || active[1]) {
+            g_gamepad = g_pad_connected = true;
+            if (active[0]) {
+                g_pad_buttons.lx = int32_t(std::clamp(sticks[0], -1.f, 1.f) * kStickMax);
+                g_pad_buttons.ly = int32_t(std::clamp(sticks[1], -1.f, 1.f) * kStickMax);
+                if (triggers[0] > 0.55f) g_pad_buttons.buttons |= kZL; else g_pad_buttons.buttons &= ~kZL;
+                if (grips[0] > 0.55f) g_pad_buttons.buttons |= kL; else g_pad_buttons.buttons &= ~kL;
+                if (buttons[0] & (1ull<<2)) g_pad_buttons.buttons |= kX; else g_pad_buttons.buttons &= ~kX;
+                if (buttons[0] & (1ull<<3)) g_pad_buttons.buttons |= kY; else g_pad_buttons.buttons &= ~kY;
+                if (buttons[0] & (1ull<<4)) g_pad_buttons.buttons |= kMinus; else g_pad_buttons.buttons &= ~kMinus;
+                if (buttons[0] & (1ull<<5)) g_pad_buttons.buttons |= kStickL; else g_pad_buttons.buttons &= ~kStickL;
+            }
+            if (active[1]) {
+                g_pad_buttons.rx = int32_t(std::clamp(sticks[2], -1.f, 1.f) * kStickMax);
+                g_pad_buttons.ry = int32_t(std::clamp(sticks[3], -1.f, 1.f) * kStickMax);
+                if (triggers[1] > 0.55f) g_pad_buttons.buttons |= kZR; else g_pad_buttons.buttons &= ~kZR;
+                if (grips[1] > 0.55f) g_pad_buttons.buttons |= kR; else g_pad_buttons.buttons &= ~kR;
+                if (buttons[1] & (1ull<<0)) g_pad_buttons.buttons |= kA; else g_pad_buttons.buttons &= ~kA;
+                if (buttons[1] & (1ull<<1)) g_pad_buttons.buttons |= kB; else g_pad_buttons.buttons &= ~kB;
+                if (buttons[1] & (1ull<<5)) g_pad_buttons.buttons |= kStickR; else g_pad_buttons.buttons &= ~kStickR;
+            }
+        }
+    }
     p.buttons |= g_pad_buttons.buttons;
     if (g_pad_buttons.lx || g_pad_buttons.ly) {
         p.lx = g_pad_buttons.lx;
