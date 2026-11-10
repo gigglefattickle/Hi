@@ -175,6 +175,7 @@ XrAction g_xr_a=XR_NULL_HANDLE,g_xr_b=XR_NULL_HANDLE,g_xr_x=XR_NULL_HANDLE,g_xr_
 bool g_xr_buttons[2][6]={};
 XrSpace g_xr_hand_space[2]={XR_NULL_HANDLE,XR_NULL_HANDLE};
 XrPosef g_xr_head_pose{{0,0,0,1},{0,0,0}};
+bool g_xr_head_valid=false;
 XrPosef g_xr_hand_pose_value[2]={{{0,0,0,1},{0,0,0}},{{0,0,0,1},{0,0,0}}};
 bool g_xr_hand_active[2]={};float g_xr_trigger_value[2]={},g_xr_grip_value[2]={};XrVector2f g_xr_stick_value[2]={};
 PFN_xrCreateActionSet p_create_action_set=nullptr;PFN_xrCreateAction p_create_action=nullptr;
@@ -266,7 +267,7 @@ void xr_update_tracking(){
  XrActiveActionSet active{g_xr_action_set,XR_NULL_PATH};XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};si.countActiveActionSets=1;si.activeActionSets=&active;
  if(XR_FAILED(p_sync_actions(g_xr_session,&si)))return;
  XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
- if(XR_SUCCEEDED(p_locate_space(g_xr_view,g_xr_local,g_xr_time,&head))&&(head.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(head.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))g_xr_head_pose=head.pose;
+ if(XR_SUCCEEDED(p_locate_space(g_xr_view,g_xr_local,g_xr_time,&head))&&(head.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(head.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_head_pose=head.pose;g_xr_head_valid=true;}else g_xr_head_valid=false;
  XrPath hands[2]{};p_string_to_path(g_xr_instance,"/user/hand/left",&hands[0]);p_string_to_path(g_xr_instance,"/user/hand/right",&hands[1]);
  for(int h=0;h<2;h++){XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.subactionPath=hands[h];gi.action=g_xr_hand_pose;
  XrActionStatePose ps{XR_TYPE_ACTION_STATE_POSE};if(XR_SUCCEEDED(p_get_pose(g_xr_session,&gi,&ps))&&ps.isActive){
@@ -345,13 +346,13 @@ void xr_android_eye_extent(uint32_t eye,uint32_t* width,uint32_t* height) {
  if(height)*height=g_xr_config[eye].recommendedImageRectHeight;
 }
 void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,float* left_rot,
- float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active,uint64_t* buttons) {
+ float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active,uint64_t* buttons,bool* head_valid) {
  std::lock_guard<std::mutex> lock(g_xr_tracking_mutex);
  auto cp=[](const XrPosef&p,float*pos,float*rot){
   if(pos){pos[0]=p.position.x;pos[1]=p.position.y;pos[2]=p.position.z;}
   if(rot){rot[0]=p.orientation.x;rot[1]=p.orientation.y;rot[2]=p.orientation.z;rot[3]=p.orientation.w;}
  };
- cp(g_xr_head_pose,head_pos,head_rot);cp(g_xr_hand_pose_value[0],left_pos,left_rot);cp(g_xr_hand_pose_value[1],right_pos,right_rot);
+ cp(g_xr_head_pose,head_pos,head_rot);if(head_valid)*head_valid=g_xr_head_valid;cp(g_xr_hand_pose_value[0],left_pos,left_rot);cp(g_xr_hand_pose_value[1],right_pos,right_rot);
  for(int h=0;h<2;h++){if(triggers)triggers[h]=g_xr_trigger_value[h];if(grips)grips[h]=g_xr_grip_value[h];
   if(sticks){sticks[h*2]=g_xr_stick_value[h].x;sticks[h*2+1]=g_xr_stick_value[h].y;}
   if(active)active[h]=g_xr_hand_active[h];if(buttons){buttons[h]=0;for(int k=0;k<6;k++)if(g_xr_buttons[h][k])buttons[h]|=(1ull<<k);}}
