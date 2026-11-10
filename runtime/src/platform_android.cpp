@@ -1101,6 +1101,7 @@ static void pgo_writer(void*) {
 #endif
 
 bool xr_android_initialize(android_app* app);
+bool xr_android_poll_events();
 
 extern "C" void android_main(android_app* app) {
     using namespace nx::plat;
@@ -1212,6 +1213,8 @@ extern "C" void android_main(android_app* app) {
             if (src) src->process(app, src);
             if (app->destroyRequested) nx::log_flush(), _exit(0);
         }
+        // OpenXR session transitions (READY/STOPPING/EXITING) are independent of the game render thread.
+        xr_android_poll_events();
         if (!started && g_window) {
             started = true;
 #ifdef NX_PGO_GENERATE
