@@ -131,7 +131,7 @@ bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr gipa, VkPhysicalD
     return true;
 }
 
-namespace { bool xr_load_frame_api(); bool xr_create_stereo(); bool xr_make_touch_actions(); }
+namespace { extern std::atomic<bool> g_xr_setup_complete; bool xr_load_frame_api(); bool xr_create_stereo(); bool xr_make_touch_actions(); }
 
 bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device,
                                uint32_t queue_family, uint32_t queue_index) {
