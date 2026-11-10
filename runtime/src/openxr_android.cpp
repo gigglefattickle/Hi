@@ -291,8 +291,9 @@ bool xr_create_stereo(){
  if(XR_FAILED(p_create_space(g_xr_session,&ri,&g_xr_view)))return false;
  uint32_t fc=0;r=p_enum_formats(g_xr_session,0,&fc,nullptr);if(XR_FAILED(r)||!fc)return false;
  std::vector<int64_t> formats(fc);r=p_enum_formats(g_xr_session,fc,&fc,formats.data());if(XR_FAILED(r))return false;
- int64_t fmt=0;for(auto f:formats)if(f==VK_FORMAT_R8G8B8A8_UNORM){fmt=f;break;}
- if(!fmt)for(auto f:formats)if(f==VK_FORMAT_B8G8R8A8_UNORM){fmt=f;break;}
+ int64_t fmt=0;const VkFormat preferred[]={VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_B8G8R8A8_UNORM,
+  VK_FORMAT_R8G8B8A8_SRGB,VK_FORMAT_B8G8R8A8_SRGB};
+ for(VkFormat candidate:preferred){for(auto f:formats)if(f==candidate){fmt=f;break;}if(fmt)break;}
  if(!fmt)return false;
  for(uint32_t e=0;e<2;e++){
   XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
