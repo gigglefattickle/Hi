@@ -72,6 +72,8 @@ bool g_gamepad = false;  // the last input came from a controller: the drawn tou
 bool g_pad_connected = false;  // a controller is connected (platform_android.cpp polls the system's input devices)
 float g_xr_head_position[3]{}, g_xr_head_orientation[4]{0,0,0,1};
 bool g_xr_head_valid = false;
+float g_xr_hand_position[2][3]{}, g_xr_hand_orientation[2][4]={{0,0,0,1},{0,0,0,1}};
+bool g_xr_hand_valid[2]{};
 
 uint64_t key_to_button(int32_t k) {
     switch (k) {
@@ -210,6 +212,15 @@ bool read_xr_head_pose(float* position, float* orientation) {
     return true;
 }
 
+bool read_xr_controller_pose(int hand, float* position, float* orientation) {
+    if (hand < 0 || hand > 1) return false;
+    std::lock_guard lk(g_in);
+    if (!g_xr_hand_valid[hand]) return false;
+    if (position) std::copy(g_xr_hand_position[hand], g_xr_hand_position[hand] + 3, position);
+    if (orientation) std::copy(g_xr_hand_orientation[hand], g_xr_hand_orientation[hand] + 4, orientation);
+    return true;
+}
+
 void read_pad(PadState& p) {
     std::lock_guard lk(g_in);
     PadState xr_pad;
@@ -223,6 +234,11 @@ void read_pad(PadState& p) {
         g_xr_head_valid = head_valid;
         std::copy(hp, hp + 3, g_xr_head_position);
         std::copy(hr, hr + 4, g_xr_head_orientation);
+        std::copy(lp, lp + 3, g_xr_hand_position[0]);
+        std::copy(lr, lr + 4, g_xr_hand_orientation[0]);
+        std::copy(rp, rp + 3, g_xr_hand_position[1]);
+        std::copy(rr, rr + 4, g_xr_hand_orientation[1]);
+        g_xr_hand_valid[0] = active[0]; g_xr_hand_valid[1] = active[1];
         if (active[0] || active[1]) {
             g_gamepad = g_pad_connected = true;
             xr_left_active = active[0];
