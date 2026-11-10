@@ -320,7 +320,7 @@ bool init() {
     // 1.1, where a 1.2 or 1.3 struct is invalid, and draw parameters then come in their own struct.
     VkPhysicalDeviceProperties dprops{};
     p_vkGetPhysicalDeviceProperties(g_physical, &dprops);
-    const uint32_t api = dprops.apiVersion;
+    const uint32_t api = std::min(dprops.apiVersion, app.apiVersion);  // never use core features newer than the instance API
     VkPhysicalDeviceShaderDrawParametersFeatures fdraw{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES};
     VkPhysicalDeviceDynamicRenderingFeatures fdyn{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES};
     void** tail;
