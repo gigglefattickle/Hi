@@ -1393,9 +1393,13 @@ void present_image(const int32_t* crop, Record&& record) {
                 transition(g_cb, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             }
             if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED) transition(g_cb, *src, old_layout);
-            end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+            if (async_gpu()) frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
+            else end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
         } else {
-            if (g_cb) end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+            if (g_cb) {
+                if (async_gpu()) frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
+                else end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+            }
         }
         xr_android_frame_end();
         return;
