@@ -1,5 +1,5 @@
-// Android OpenXR loader and runtime discovery. The Vulkan device/session hookup lives in nvn_vk.cpp;
-// keeping this bootstrap separate lets the ordinary Android surface path remain unchanged.
+// Android OpenXR lifecycle, stereo swapchains, and Touch actions. Vulkan device creation stays in nvn_vk.cpp;
+// the ordinary Android surface path remains available when no OpenXR runtime is present.
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <vulkan/vulkan.h>
@@ -384,9 +384,8 @@ void xr_android_frame_end() {
  g_xr_frame=false;g_xr_render=false;
 }
 
-// Called from android_main after the NativeActivity is available. This deliberately stops at
-// runtime/system discovery: a session must not be created until nvn_vk has an XR-compatible
-// VkInstance/VkDevice and the renderer can submit OpenXR swapchain images.
+// Called from android_main after the NativeActivity is available. Vulkan session creation is deferred
+// until nvn_vk has created the exact Vulkan instance/device/queue that the OpenXR runtime selected.
 bool xr_android_initialize(android_app* app) {
     if (!app || !app->activity || !app->activity->vm || !app->activity->clazz) {
         xr_log("NativeActivity context is unavailable");
