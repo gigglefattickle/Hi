@@ -2,6 +2,7 @@
 // keeping this bootstrap separate lets the ordinary Android surface path remain unchanged.
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_VULKAN
+#include <vulkan/vulkan.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
