@@ -369,6 +369,10 @@ if(ANDROID)
     # Khronos OpenXR Android loader (Meta Quest requires Khronos loader >= 1.0.34).
     # Build only the loader; application code uses its public headers and the Android runtime.
     include(FetchContent)
+    # Make the project's pinned Vulkan headers visible to the OpenXR loader's FindVulkan probe.
+    if(NX_VULKAN_SDK)
+        set(Vulkan_INCLUDE_DIR "${NX_VULKAN_SDK}/include" CACHE PATH "Vulkan headers for OpenXR loader" FORCE)
+    endif()
     set(BUILD_LOADER ON CACHE BOOL "" FORCE)
     set(DYNAMIC_LOADER ON CACHE BOOL "" FORCE)
     set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
