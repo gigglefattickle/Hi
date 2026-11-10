@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstring>
 #include <mutex>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -154,7 +155,8 @@ bool xr_android_create_session(VkInstance instance, VkPhysicalDevice physical_de
 
 
 namespace {
-bool g_xr_running=false,g_xr_frame=false,g_xr_render=false;
+std::atomic<bool> g_xr_running{false};
+bool g_xr_frame=false,g_xr_render=false;
 XrSessionState g_xr_state=XR_SESSION_STATE_UNKNOWN;
 XrSpace g_xr_local=XR_NULL_HANDLE,g_xr_view=XR_NULL_HANDLE;
 XrViewConfigurationView g_xr_config[2]={{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};
@@ -322,7 +324,7 @@ bool xr_android_poll_events() {
  return g_xr_running;
 }
 bool xr_android_frame_begin() {
- xr_android_poll_events();if(!g_xr_running||g_xr_frame)return false;
+ if(!g_xr_running.load()||g_xr_frame)return false;
  XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};XrFrameState fs{XR_TYPE_FRAME_STATE};
  XrResult r=p_wait(g_xr_session,&wi,&fs);if(XR_FAILED(r)){xr_log("xrWaitFrame failed",r);return false;}
  g_xr_time=fs.predictedDisplayTime;XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
