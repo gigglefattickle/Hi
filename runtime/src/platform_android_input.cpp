@@ -202,6 +202,8 @@ bool read_player_pad(int, PadState&) { return false; }  // player 1 only on this
 
 void read_pad(PadState& p) {
     std::lock_guard lk(g_in);
+    PadState xr_pad;
+    bool xr_left_active = false, xr_right_active = false;
     if (xr_android_is_available()) {
         float hp[3]{}, hr[4]{}, lp[3]{}, lr[4]{}, rp[3]{}, rr[4]{};
         float triggers[2]{}, grips[2]{}, sticks[4]{};
@@ -211,33 +213,35 @@ void read_pad(PadState& p) {
         if (active[0] || active[1]) {
             g_gamepad = g_pad_connected = true;
             if (active[0]) {
-                g_pad_buttons.lx = int32_t(std::clamp(sticks[0], -1.f, 1.f) * kStickMax);
-                g_pad_buttons.ly = int32_t(std::clamp(sticks[1], -1.f, 1.f) * kStickMax);
-                if (triggers[0] > 0.55f) g_pad_buttons.buttons |= kZL; else g_pad_buttons.buttons &= ~kZL;
-                if (grips[0] > 0.55f) g_pad_buttons.buttons |= kL; else g_pad_buttons.buttons &= ~kL;
-                if (buttons[0] & (1ull<<2)) g_pad_buttons.buttons |= kX; else g_pad_buttons.buttons &= ~kX;
-                if (buttons[0] & (1ull<<3)) g_pad_buttons.buttons |= kY; else g_pad_buttons.buttons &= ~kY;
-                if (buttons[0] & (1ull<<4)) g_pad_buttons.buttons |= kMinus; else g_pad_buttons.buttons &= ~kMinus;
-                if (buttons[0] & (1ull<<5)) g_pad_buttons.buttons |= kStickL; else g_pad_buttons.buttons &= ~kStickL;
+                xr_pad.lx = int32_t(std::clamp(sticks[0], -1.f, 1.f) * kStickMax);
+                xr_pad.ly = int32_t(std::clamp(sticks[1], -1.f, 1.f) * kStickMax);
+                if (triggers[0] > 0.55f) xr_pad.buttons |= kZL; else xr_pad.buttons &= ~kZL;
+                if (grips[0] > 0.55f) xr_pad.buttons |= kL; else xr_pad.buttons &= ~kL;
+                if (buttons[0] & (1ull<<2)) xr_pad.buttons |= kX; else xr_pad.buttons &= ~kX;
+                if (buttons[0] & (1ull<<3)) xr_pad.buttons |= kY; else xr_pad.buttons &= ~kY;
+                if (buttons[0] & (1ull<<4)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
+                if (buttons[0] & (1ull<<5)) xr_pad.buttons |= kStickL; else xr_pad.buttons &= ~kStickL;
             }
             if (active[1]) {
-                g_pad_buttons.rx = int32_t(std::clamp(sticks[2], -1.f, 1.f) * kStickMax);
-                g_pad_buttons.ry = int32_t(std::clamp(sticks[3], -1.f, 1.f) * kStickMax);
-                if (triggers[1] > 0.55f) g_pad_buttons.buttons |= kZR; else g_pad_buttons.buttons &= ~kZR;
-                if (grips[1] > 0.55f) g_pad_buttons.buttons |= kR; else g_pad_buttons.buttons &= ~kR;
-                if (buttons[1] & (1ull<<0)) g_pad_buttons.buttons |= kA; else g_pad_buttons.buttons &= ~kA;
-                if (buttons[1] & (1ull<<1)) g_pad_buttons.buttons |= kB; else g_pad_buttons.buttons &= ~kB;
-                if (buttons[1] & (1ull<<5)) g_pad_buttons.buttons |= kStickR; else g_pad_buttons.buttons &= ~kStickR;
+                xr_pad.rx = int32_t(std::clamp(sticks[2], -1.f, 1.f) * kStickMax);
+                xr_pad.ry = int32_t(std::clamp(sticks[3], -1.f, 1.f) * kStickMax);
+                if (triggers[1] > 0.55f) xr_pad.buttons |= kZR; else xr_pad.buttons &= ~kZR;
+                if (grips[1] > 0.55f) xr_pad.buttons |= kR; else xr_pad.buttons &= ~kR;
+                if (buttons[1] & (1ull<<0)) xr_pad.buttons |= kA; else xr_pad.buttons &= ~kA;
+                if (buttons[1] & (1ull<<1)) xr_pad.buttons |= kB; else xr_pad.buttons &= ~kB;
+                if (buttons[1] & (1ull<<5)) xr_pad.buttons |= kStickR; else xr_pad.buttons &= ~kStickR;
             }
         }
     }
-    p.buttons |= g_pad_buttons.buttons;
+    p.buttons |= g_pad_buttons.buttons | xr_pad.buttons;
     if (g_pad_buttons.lx || g_pad_buttons.ly) {
         p.lx = g_pad_buttons.lx;
         p.ly = g_pad_buttons.ly;
     }
     p.rx = g_pad_buttons.rx;
     p.ry = g_pad_buttons.ry;
+    if (xr_left_active) { p.lx = xr_pad.lx; p.ly = xr_pad.ly; }
+    if (xr_right_active) { p.rx = xr_pad.rx; p.ry = xr_pad.ry; }
     float radius = std::max(1.f, g_h * 0.12f);
     size_t drawn = 0;
     touch_buttons(drawn, g_w / g_h);
