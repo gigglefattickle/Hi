@@ -34,10 +34,10 @@
 #if defined(__ANDROID__)
 bool xr_android_is_available();
 uint32_t xr_android_vulkan_api_version();
-bool xr_android_create_vulkan_instance(void*, void*, void*, void*);
-bool xr_android_get_vulkan_physical_device(void*, void*);
-bool xr_android_create_vulkan_device(void*, void*, void*, void*, void*);
-bool xr_android_create_session(void*, void*, void*, uint32_t, uint32_t);
+bool xr_android_create_vulkan_instance(PFN_vkGetInstanceProcAddr, const VkInstanceCreateInfo*, VkInstance*, VkResult*);
+bool xr_android_get_vulkan_physical_device(VkInstance, VkPhysicalDevice*);
+bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr, VkPhysicalDevice, const VkDeviceCreateInfo*, VkDevice*, VkResult*);
+bool xr_android_create_session(VkInstance, VkPhysicalDevice, VkDevice, uint32_t, uint32_t);
 #endif
 
 namespace nx {
@@ -232,7 +232,7 @@ bool init() {
 #if defined(__ANDROID__)
     if (xr_mode) {
         VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
-        if (!xr_android_create_vulkan_instance(reinterpret_cast<void*>(gipa), &ici, &g_instance, &xr_vk_result) ||
+        if (!xr_android_create_vulkan_instance(gipa, &ici, &g_instance, &xr_vk_result) ||
             xr_vk_result != VK_SUCCESS) {
             log("nvn/vk: OpenXR Vulkan instance creation failed (%d)", int(xr_vk_result));
             return false;
@@ -252,7 +252,7 @@ bool init() {
     gpus.resize(n);
 #if defined(__ANDROID__)
     if (xr_mode) {
-        if (!xr_android_get_vulkan_physical_device(&g_instance, &g_physical) || !g_physical) {
+        if (!xr_android_get_vulkan_physical_device(g_instance, &g_physical) || !g_physical) {
             log("nvn/vk: OpenXR did not provide a compatible Vulkan physical device");
             return false;
         }
@@ -488,8 +488,7 @@ bool init() {
 #if defined(__ANDROID__)
     if (xr_mode) {
         VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
-        if (!xr_android_create_vulkan_device(reinterpret_cast<void*>(gipa), &g_physical, &dci,
-                                             &g_device, &xr_vk_result) || xr_vk_result != VK_SUCCESS) {
+        if (!xr_android_create_vulkan_device(gipa, g_physical, &dci, &g_device, &xr_vk_result) || xr_vk_result != VK_SUCCESS) {
             log("nvn/vk: OpenXR Vulkan device creation failed (%d)", int(xr_vk_result));
             return false;
         }
@@ -498,7 +497,7 @@ bool init() {
     if (!check(p_create_device(g_physical, &dci, nullptr, &g_device), "vkCreateDevice")) return false;
     p_vkGetDeviceQueue(g_device, g_family, 0, &g_queue);
 #if defined(__ANDROID__)
-    if (xr_mode && !xr_android_create_session(&g_instance, &g_physical, &g_device, g_family, 0)) {
+    if (xr_mode && !xr_android_create_session(g_instance, g_physical, g_device, g_family, 0)) {
         log("nvn/vk: OpenXR session creation failed");
         return false;
     }
