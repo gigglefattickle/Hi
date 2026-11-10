@@ -169,7 +169,13 @@ bool xr_load_frame_api(){
  xr_load("xrEnumerateViewConfigurationViews",p_enum_views)&&xr_load("xrEnumerateSwapchainFormats",p_enum_formats)&&
  xr_load("xrCreateSwapchain",p_create_swapchain)&&xr_load("xrEnumerateSwapchainImages",p_enum_images)&&
  xr_load("xrAcquireSwapchainImage",p_acquire)&&xr_load("xrWaitSwapchainImage",p_wait_image)&&
- xr_load("xrReleaseSwapchainImage",p_release)&&\n xr_load("xrCreateActionSet",p_create_action_set)&&xr_load("xrCreateAction",p_create_action)&&\n xr_load("xrSuggestInteractionProfileBindings",p_suggest_bindings)&&xr_load("xrAttachSessionActionSets",p_attach_actions)&&\n xr_load("xrSyncActions",p_sync_actions)&&xr_load("xrGetActionStatePose",p_get_pose)&&\n xr_load("xrGetActionStateFloat",p_get_float)&&xr_load("xrGetActionStateVector2f",p_get_vector)&&\n xr_load("xrCreateActionSpace",p_create_action_space)&&xr_load("xrLocateSpace",p_locate_space)&&\n xr_load("xrStringToPath",p_string_to_path);
+ xr_load("xrReleaseSwapchainImage",p_release)&&
+ xr_load("xrCreateActionSet",p_create_action_set)&&xr_load("xrCreateAction",p_create_action)&&
+ xr_load("xrSuggestInteractionProfileBindings",p_suggest_bindings)&&xr_load("xrAttachSessionActionSets",p_attach_actions)&&
+ xr_load("xrSyncActions",p_sync_actions)&&xr_load("xrGetActionStatePose",p_get_pose)&&
+ xr_load("xrGetActionStateFloat",p_get_float)&&xr_load("xrGetActionStateVector2f",p_get_vector)&&
+ xr_load("xrCreateActionSpace",p_create_action_space)&&xr_load("xrLocateSpace",p_locate_space)&&
+ xr_load("xrStringToPath",p_string_to_path);
 }
 
 bool xr_make_touch_actions(){
@@ -276,6 +282,22 @@ bool xr_android_frame_begin() {
  if(XR_FAILED(r)||count!=2){g_xr_render=false;xr_log("xrLocateViews failed",r);}
  xr_update_tracking();
  return g_xr_render;
+}
+void xr_android_eye_extent(uint32_t eye,uint32_t* width,uint32_t* height) {
+ if(eye>=2)return;
+ if(width)*width=g_xr_config[eye].recommendedImageRectWidth;
+ if(height)*height=g_xr_config[eye].recommendedImageRectHeight;
+}
+void xr_android_get_tracking(float* head_pos,float* head_rot,float* left_pos,float* left_rot,
+ float* right_pos,float* right_rot,float* triggers,float* grips,float* sticks,bool* active) {
+ auto cp=[](const XrPosef&p,float*pos,float*rot){
+  if(pos){pos[0]=p.position.x;pos[1]=p.position.y;pos[2]=p.position.z;}
+  if(rot){rot[0]=p.orientation.x;rot[1]=p.orientation.y;rot[2]=p.orientation.z;rot[3]=p.orientation.w;}
+ };
+ cp(g_xr_head_pose,head_pos,head_rot);cp(g_xr_hand_pose_value[0],left_pos,left_rot);cp(g_xr_hand_pose_value[1],right_pos,right_rot);
+ for(int h=0;h<2;h++){if(triggers)triggers[h]=g_xr_trigger_value[h];if(grips)grips[h]=g_xr_grip_value[h];
+  if(sticks){sticks[h*2]=g_xr_stick_value[h].x;sticks[h*2+1]=g_xr_stick_value[h].y;}
+  if(active)active[h]=g_xr_hand_active[h];}
 }
 bool xr_android_acquire_eye(uint32_t eye,VkImage* image) {
  if(!g_xr_frame||!g_xr_render||eye>=2||!image||g_xr_acquired[eye])return false;
