@@ -281,26 +281,35 @@ void xr_update_tracking(){
  gi.action=g_xr_grip;g_xr_grip_value[h]=0;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_grip_value[h]=f.isActive?f.currentState:0;
  XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;g_xr_stick_value[h]={0,0};if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};
   XrActionStateBoolean bs{XR_TYPE_ACTION_STATE_BOOLEAN};XrAction face[6]={g_xr_a,g_xr_b,g_xr_x,g_xr_y,g_xr_menu,g_xr_stick_click};
-  for(int k=0;k<6;k++){gi.action=face[k];bool down=XR_SUCCEEDED(p_get_boolean(g_xr_session,&gi,&bs))&&bs.isActive&&bs.currentState;
-   g_xr_buttons[h][k]=down;}}
- // Hold both Touch controller thumbsticks for one second to toggle the in-game settings.
- // The left system-menu button is reserved by the Quest OS and must not be intercepted.
- using Clock = std::chrono::steady_clock;
- static Clock::time_point both_sticks_since{};
- static bool both_sticks_fired = false;
- const bool both_sticks_down = g_xr_buttons[0][5] && g_xr_buttons[1][5];
- if (!both_sticks_down) {
-     both_sticks_since = Clock::time_point{};
-     both_sticks_fired = false;
- } else if (!both_sticks_fired) {
-     const auto now = Clock::now();
-     if (both_sticks_since == Clock::time_point{}) {
-         both_sticks_since = now;
-     } else if (now - both_sticks_since >= std::chrono::seconds(1)) {
-         nx::ui::ui_toggle();
-         both_sticks_fired = true;
-     }
- }
+   for(int k=0;k<6;k++){gi.action=face[k];XrResult br=p_get_boolean(g_xr_session,&gi,&bs);bool down=XR_SUCCEEDED(br)&&bs.isActive&&bs.currentState;
+    g_xr_buttons[h][k]=down;
+    if(k==5 && (down || (XR_SUCCEEDED(br)&&bs.isActive)))
+     __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","stick-click hand=%d active=%d down=%d result=%d",h,int(bs.isActive),int(down),int(br));
+   }}
+  // Hold both Touch controller thumbsticks for one second to toggle the in-game settings.
+  // Log transitions to distinguish missing controller input from a failed UI toggle.
+  using Clock = std::chrono::steady_clock;
+  static Clock::time_point both_sticks_since{};
+  static bool both_sticks_fired = false;
+  static bool previous_both_sticks_down = false;
+  const bool both_sticks_down = g_xr_buttons[0][5] && g_xr_buttons[1][5];
+  if (both_sticks_down != previous_both_sticks_down) {
+      __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","both-stick state=%d left=%d right=%d",
+                          int(both_sticks_down),int(g_xr_buttons[0][5]),int(g_xr_buttons[1][5]));
+      previous_both_sticks_down = both_sticks_down;
+  }
+  if (!both_sticks_down) {
+      both_sticks_since = Clock::time_point{};
+      both_sticks_fired = false;
+  } else if (!both_sticks_fired) {
+      const auto now = Clock::now();
+      if (both_sticks_since == Clock::time_point{}) both_sticks_since = now;
+      else if (now - both_sticks_since >= std::chrono::seconds(1)) {
+          __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","both-stick hold complete; toggling settings");
+          nx::ui::ui_toggle();
+          both_sticks_fired = true;
+      }
+  }
 }
 
 bool xr_create_stereo(){
