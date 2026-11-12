@@ -250,7 +250,7 @@ void read_pad(PadState& p) {
                 if (grips[0] > 0.55f) xr_pad.buttons |= kL; else xr_pad.buttons &= ~kL;
                 if (buttons[0] & (1ull<<2)) xr_pad.buttons |= kX; else xr_pad.buttons &= ~kX;
                 if (buttons[0] & (1ull<<3)) xr_pad.buttons |= kY; else xr_pad.buttons &= ~kY;
-                if (buttons[0] & (1ull<<4)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
+                if (buttons[0] & (1ull<<4)) xr_pad.buttons |= kSettingsButton; else xr_pad.buttons &= ~kSettingsButton;
                 if (buttons[0] & (1ull<<5)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
             }
             if (active[1]) {
