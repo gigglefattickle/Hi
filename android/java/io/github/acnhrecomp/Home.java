@@ -126,6 +126,17 @@ public class Home extends Activity {
     private void showSaveManager() {
         base(t("Save Manager","Gerenciador de saves"),
                 t("Export a backup before reinstalling the app. Import replaces the current device save.","Exporte um backup antes de reinstalar o app. Importar substitui o save atual."),null);
+        String dataRoot = readSaved();
+        if (dataRoot.isEmpty() || !hasPackage(new File(dataRoot))) {
+            TextView missing = new TextView(this);
+            missing.setText(t("Select your game folder first. Save Manager will be available after the game folder is configured.",
+                    "Escolha a pasta do jogo primeiro. O gerenciador de saves ficará disponível depois."));
+            missing.setTextSize(15); missing.setTextColor(Color.rgb(100,85,70)); missing.setPadding(0,dp(12),0,dp(8));
+            box.addView(missing);
+            box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
+            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+            return;
+        }
         File save = activeSave();
         TextView status = new TextView(this);
         status.setText(t("Save folder: ","Pasta do save: ")+save.getAbsolutePath()+"\n"+
