@@ -1416,7 +1416,11 @@ void present_image(const int32_t* crop, Record&& record) {
                     p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                      dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
                 }
-                transition(g_cb, dst, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                // The VR path presents directly to OpenXR eye swapchains, so it must
+                // draw the in-game settings UI here as well as the desktop presenter path.
+                // ui_record expects PRESENT_SRC_KHR after the image blit and leaves it there.
+                transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                ui::ui_record(g_cb, dst.image, dst.format, VkExtent2D{width, height});
             }
             if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED) transition(g_cb, *src, old_layout);
             if (async_gpu()) frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
