@@ -69,10 +69,10 @@ public class Home extends Activity {
     private int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     private Button button(String label, int color, View.OnClickListener click) {
-        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(18);
+        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(17);
         b.setTextColor(color == Color.WHITE ? Color.rgb(92,70,50) : Color.WHITE);
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(24));
-        b.setBackground(bg); b.setPadding(dp(22),dp(10),dp(22),dp(10)); b.setMinHeight(dp(56));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(18));
+        b.setBackground(bg); b.setPadding(dp(22),dp(10),dp(22),dp(10)); b.setMinHeight(dp(54));
         b.setOnClickListener(click);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); b.setLayoutParams(lp);
         return b;
@@ -85,13 +85,22 @@ public class Home extends Activity {
         LinearLayout outer = new LinearLayout(this); outer.setGravity(Gravity.CENTER);
         outer.setPadding(dp(24),dp(24),dp(24),dp(24));
         box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(28),dp(24),dp(28),dp(24));
+        box.setPadding(dp(30),dp(26),dp(30),dp(26));
         GradientDrawable paper = new GradientDrawable(); paper.setColor(Color.rgb(255,250,232)); paper.setCornerRadius(dp(28));
         box.setBackground(paper);
-        outer.addView(box,new LinearLayout.LayoutParams(Math.min(dp(560),getResources().getDisplayMetrics().widthPixels-dp(48)),-2));
+        outer.addView(box,new LinearLayout.LayoutParams(Math.min(dp(680),getResources().getDisplayMetrics().widthPixels-dp(48)),-2));
         scroll.addView(outer);
-        TextView title = new TextView(this); title.setText(titleText); title.setTextSize(28);
-        title.setTypeface(Typeface.DEFAULT_BOLD); title.setTextColor(Color.rgb(92,70,50)); box.addView(title);
+        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL); box.addView(header);
+        TextView title = new TextView(this); title.setText(titleText); title.setTextSize(27);
+        title.setTypeface(Typeface.DEFAULT_BOLD); title.setTextColor(Color.rgb(92,70,50));
+        header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        TextView gear = new TextView(this); gear.setText("⚙"); gear.setTextSize(25);
+        gear.setTextColor(Color.rgb(92,70,50)); gear.setGravity(Gravity.CENTER);
+        GradientDrawable gearBg = new GradientDrawable(); gearBg.setColor(Color.rgb(232,241,213)); gearBg.setCornerRadius(dp(18));
+        gear.setBackground(gearBg); gear.setPadding(dp(13),dp(7),dp(13),dp(7));
+        gear.setContentDescription(t("Settings","Configurações")); gear.setOnClickListener(v -> showSettings());
+        header.addView(gear,new LinearLayout.LayoutParams(-2,-2));
         TextView desc = new TextView(this); desc.setText(subtitle); desc.setTextSize(16);
         desc.setTextColor(Color.rgb(120,100,80)); desc.setPadding(0,dp(8),0,dp(8)); box.addView(desc);
         message = new TextView(this); message.setTextSize(15); message.setTextColor(Color.rgb(190,80,80));
@@ -102,12 +111,12 @@ public class Home extends Activity {
     private void showLauncher(String note, boolean forcePick) {
         String saved = forcePick ? "" : readSaved();
         boolean valid = !saved.isEmpty() && hasPackage(new File(saved)) && canRead(saved);
-        base("ACNH VR", t("Your game launcher","Seu inicializador"),
+        base(t("Animal Crossing VR","Animal Crossing VR"), t("Your game launcher","Seu inicializador"),
                 note != null ? note : (valid ? t("Game folder ready.","Pasta do jogo pronta.")
                         : t("Choose your prepared game folder to get started.","Escolha a pasta preparada do jogo para começar.")));
         if (valid) box.addView(button(t("Play","Jogar"),Color.rgb(90,170,90),v -> check(saved,false)));
         else box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
-        box.addView(button(t("Settings","Configurações"),Color.rgb(110,145,190),v -> showSettings()));
+        box.addView(button(t("Coming Soon","Em breve"),Color.rgb(176,140,100),v -> say(t("This section is coming soon.","Esta seção estará disponível em breve."),false)));
         box.addView(button(t("Save Manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
         if (valid) box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(150,130,110),v -> pick()));
         for (final String f : found()) if (!valid || !f.equals(saved))
@@ -245,12 +254,12 @@ public class Home extends Activity {
         status.setText(t("Save folder: ","Pasta do save: ")+save.getAbsolutePath()+"\n"+
                 (save.isDirectory()?t("Save data found","Dados de save encontrados"):t("No save folder yet","Ainda não existe pasta de save")));
         status.setTextSize(13); status.setTextColor(Color.rgb(100,85,70)); status.setPadding(0,dp(10),0,dp(8)); box.addView(status);
-        box.addView(button(t("Export save backup (.zip)","Exportar backup do save (.zip)"),Color.rgb(90,170,90),v -> {
+        box.addView(button(t("Export Save","Exportar save"),Color.rgb(90,170,90),v -> {
             if (!save.isDirectory()) { say(t("No save data exists to export yet.","Ainda não há dados de save para exportar."),true); return; }
             Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("application/zip"); i.putExtra(Intent.EXTRA_TITLE,"ACNH-VR-save-backup.zip"); startActivityForResult(i,EXPORT_SAVE);
         }));
-        box.addView(button(t("Import save backup (.zip)","Importar backup do save (.zip)"),Color.rgb(190,145,75),v -> {
+        box.addView(button(t("Load Save","Carregar save"),Color.rgb(190,145,75),v -> {
             Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
             i.setType("application/zip"); startActivityForResult(i,IMPORT_SAVE);
         }));
