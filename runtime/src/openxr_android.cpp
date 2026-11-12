@@ -370,7 +370,7 @@ bool xr_android_frame_begin() {
  { std::lock_guard<std::mutex> queue_lock(nx::nvn::vk_queue_mutex()); r=p_frame_begin(g_xr_session,&bi); } if(XR_FAILED(r)){xr_log("xrBeginFrame failed",r);return false;}
  g_xr_frame=true;g_xr_render=fs.shouldRender;
  XrViewState vs{XR_TYPE_VIEW_STATE};XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
- li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_local;
+ li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=g_xr_time;li.space=g_xr_view;
  uint32_t count=0;r=p_locate_views(g_xr_session,&li,&vs,2,&count,g_xr_views);
  if(XR_FAILED(r)||count!=2){g_xr_render=false;xr_log("xrLocateViews failed",r);}
  xr_update_tracking();
@@ -413,7 +413,7 @@ void xr_android_frame_end() {
   pv[e].subImage.imageRect.offset={0,0};pv[e].subImage.imageRect.extent={
    int32_t(g_xr_config[e].recommendedImageRectWidth),int32_t(g_xr_config[e].recommendedImageRectHeight)};
  }
- XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=g_xr_local;layer.viewCount=2;layer.views=pv;
+ XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=g_xr_view;layer.viewCount=2;layer.views=pv;
  const XrCompositionLayerBaseHeader* layers[]={reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer)};
  XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=g_xr_time;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
  ei.layerCount=submit?1:0;ei.layers=submit?layers:nullptr;
