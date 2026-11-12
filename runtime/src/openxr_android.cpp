@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "ui/ui.h"
+
 namespace nx::nvn { std::mutex& vk_queue_mutex(); }
 
 namespace {
@@ -270,6 +272,7 @@ void xr_update_tracking(){
  XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
  if(XR_SUCCEEDED(p_locate_space(g_xr_view,g_xr_local,g_xr_time,&head))&&(head.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(head.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_head_pose=head.pose;g_xr_head_valid=true;}else g_xr_head_valid=false;
  XrPath hands[2]{};p_string_to_path(g_xr_instance,"/user/hand/left",&hands[0]);p_string_to_path(g_xr_instance,"/user/hand/right",&hands[1]);
+ bool left_menu_down = false;
  for(int h=0;h<2;h++){XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.subactionPath=hands[h];gi.action=g_xr_hand_pose;
  XrActionStatePose ps{XR_TYPE_ACTION_STATE_POSE};if(XR_SUCCEEDED(p_get_pose(g_xr_session,&gi,&ps))&&ps.isActive){
  XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};if(XR_SUCCEEDED(p_locate_space(g_xr_hand_space[h],g_xr_local,g_xr_time,&loc))&&(loc.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(loc.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_hand_pose_value[h]=loc.pose;g_xr_hand_active[h]=true;}else g_xr_hand_active[h]=false;}else g_xr_hand_active[h]=false;
@@ -277,7 +280,13 @@ void xr_update_tracking(){
  gi.action=g_xr_grip;g_xr_grip_value[h]=0;if(XR_SUCCEEDED(p_get_float(g_xr_session,&gi,&f)))g_xr_grip_value[h]=f.isActive?f.currentState:0;
  XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;g_xr_stick_value[h]={0,0};if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};
   XrActionStateBoolean bs{XR_TYPE_ACTION_STATE_BOOLEAN};XrAction face[6]={g_xr_a,g_xr_b,g_xr_x,g_xr_y,g_xr_menu,g_xr_stick_click};
-  for(int k=0;k<6;k++){gi.action=face[k];g_xr_buttons[h][k]=XR_SUCCEEDED(p_get_boolean(g_xr_session,&gi,&bs))&&bs.isActive&&bs.currentState;}}
+  for(int k=0;k<6;k++){gi.action=face[k];bool down=XR_SUCCEEDED(p_get_boolean(g_xr_session,&gi,&bs))&&bs.isActive&&bs.currentState;
+   if(h==0&&k==4)left_menu_down=down;
+   g_xr_buttons[h][k]=down;}}
+ // The Quest left-controller menu button opens/closes the in-game PC-style settings screen.
+ static bool left_menu_was_down = false;
+ if(left_menu_down&&!left_menu_was_down)nx::ui::ui_toggle();
+ left_menu_was_down=left_menu_down;
 }
 
 bool xr_create_stereo(){
