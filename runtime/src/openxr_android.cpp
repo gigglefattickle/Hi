@@ -13,6 +13,8 @@
 #include <cstring>
 #include <mutex>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -330,6 +332,18 @@ bool xr_android_poll_events() {
 }
 bool xr_android_frame_begin() {
  if(!g_xr_running.load()||g_xr_frame)return false;
+ // The guest's simulation and audio are authored around a 60 Hz game clock. The Quest
+ // compositor may refresh at 72/80/90/120 Hz; calling into the game once per compositor
+ // frame makes simulation run faster than its 48 kHz audio. Pace guest frames at 60 Hz
+ // while still letting OpenXR present the latest image at the headset's native refresh.
+ using steady = std::chrono::steady_clock;
+ static steady::time_point next_game_frame{};
+ constexpr auto game_period = std::chrono::nanoseconds(16'666'667);
+ const auto now = steady::now();
+ if (next_game_frame == steady::time_point{}) next_game_frame = now;
+ next_game_frame += game_period;
+ if (next_game_frame > now) std::this_thread::sleep_until(next_game_frame);
+ else if (now - next_game_frame > game_period * 3) next_game_frame = now;
  XrFrameWaitInfo wi{XR_TYPE_FRAME_WAIT_INFO};XrFrameState fs{XR_TYPE_FRAME_STATE};
  XrResult r=p_wait(g_xr_session,&wi,&fs);if(XR_FAILED(r)){xr_log("xrWaitFrame failed",r);return false;}
  g_xr_time=fs.predictedDisplayTime;XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};
