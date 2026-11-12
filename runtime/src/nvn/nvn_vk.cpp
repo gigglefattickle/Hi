@@ -28,6 +28,7 @@
 #include "nvn_vk.h"
 #include "ui/ui.h"
 #include "platform.h"
+#include "config.h"
 
 #include <nx/game.h>
 
@@ -1393,8 +1394,18 @@ void present_image(const int32_t* crop, Record&& record) {
                 } else {
                     fitted_width = std::max(1, int32_t(float(height) * source_aspect + 0.5f));
                 }
-                const int32_t offset_x = (int32_t(width) - fitted_width) / 2;
-                const int32_t offset_y = (int32_t(height) - fitted_height) / 2;
+                // Leave an alignment margin so the player can move either eye image without
+                // writing outside the swapchain. The controls are saved and read live.
+                fitted_width = std::max(1, int32_t(float(fitted_width) * 0.90f + 0.5f));
+                fitted_height = std::max(1, int32_t(float(fitted_height) * 0.90f + 0.5f));
+                const char* x_key = eye == 0 ? "vr.left_x_pct" : "vr.right_x_pct";
+                const char* y_key = eye == 0 ? "vr.left_y_pct" : "vr.right_y_pct";
+                const int x_pct = std::clamp(config_get_int(x_key, 0), -10, 10);
+                const int y_pct = std::clamp(config_get_int(y_key, 0), -10, 10);
+                const int32_t travel_x = std::max(0, (int32_t(width) - fitted_width) / 2);
+                const int32_t travel_y = std::max(0, (int32_t(height) - fitted_height) / 2);
+                const int32_t offset_x = (int32_t(width) - fitted_width) / 2 + travel_x * x_pct / 10;
+                const int32_t offset_y = (int32_t(height) - fitted_height) / 2 + travel_y * y_pct / 10;
                 blit.dstOffsets[0] = {offset_x, offset_y, 0};
                 blit.dstOffsets[1] = {offset_x + fitted_width, offset_y + fitted_height, 1};
 
