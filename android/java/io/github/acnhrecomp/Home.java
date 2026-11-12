@@ -119,8 +119,111 @@ public class Home extends Activity {
         String folder = readSaved();
         TextView current = new TextView(this); current.setText(t("Game folder: ","Pasta do jogo: ")+(folder.isEmpty()?t("Not selected","Não selecionada"):folder));
         current.setTextSize(14); current.setTextColor(Color.rgb(100,85,70)); current.setPadding(0,dp(12),0,dp(8)); box.addView(current);
+        box.addView(button(t("Graphics","Gráficos"),Color.rgb(70,155,135),v -> showGraphics()));
         box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
         box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+    }
+
+    private String graphicsValue(String key, String fallback) {
+        String folder = readSaved();
+        if (folder.isEmpty()) return fallback;
+        File ini = new File(folder, "config.ini");
+        try {
+            String section = "";
+            for (String line : Files.readAllLines(ini.toPath(), StandardCharsets.UTF_8)) {
+                String s = line.trim();
+                if (s.isEmpty() || s.startsWith("#") || s.startsWith(";")) continue;
+                if (s.startsWith("[") && s.endsWith("]")) { section = s.substring(1, s.length()-1).trim(); continue; }
+                int eq = s.indexOf('=');
+                if (eq < 0) continue;
+                String full = section.isEmpty() ? s.substring(0,eq).trim() : section+"."+s.substring(0,eq).trim();
+                if (full.equals(key)) return s.substring(eq+1).trim();
+            }
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    private boolean writeGraphics(java.util.Map<String,String> changes) {
+        String folder = readSaved();
+        if (folder.isEmpty()) return false;
+        File ini = new File(folder, "config.ini");
+        try {
+            List<String> lines = ini.isFile() ? Files.readAllLines(ini.toPath(), StandardCharsets.UTF_8) : new ArrayList<>();
+            java.util.Set<String> written = new java.util.HashSet<>();
+            String section = "";
+            List<String> out = new ArrayList<>();
+            for (String line : lines) {
+                String s = line.trim();
+                if (s.startsWith("[") && s.endsWith("]")) section = s.substring(1,s.length()-1).trim();
+                int eq = s.indexOf('=');
+                if (eq >= 0 && !s.startsWith("#") && !s.startsWith(";")) {
+                    String key = section.isEmpty() ? s.substring(0,eq).trim() : section+"."+s.substring(0,eq).trim();
+                    if (changes.containsKey(key)) {
+                        out.add(line.substring(0, line.indexOf('=')+1) + " " + changes.get(key));
+                        written.add(key);
+                        continue;
+                    }
+                }
+                out.add(line);
+            }
+            for (java.util.Map.Entry<String,String> e : changes.entrySet()) if (!written.contains(e.getKey())) {
+                String key=e.getKey(); int dot=key.indexOf('.');
+                String wanted=key.substring(0,dot), local=key.substring(dot+1);
+                boolean hasSection=false;
+                for (String line:out) if (line.trim().equals("["+wanted+"]")) {hasSection=true;break;}
+                if (!hasSection) { if (!out.isEmpty() && !out.get(out.size()-1).isEmpty()) out.add(""); out.add("["+wanted+"]"); }
+                int start=-1; for(int i=0;i<out.size();i++) if(out.get(i).trim().equals("["+wanted+"]")){start=i+1;break;}
+                int end=out.size(); for(int i=start;i<out.size();i++) if(out.get(i).trim().startsWith("[")&&out.get(i).trim().endsWith("]")){end=i;break;}
+                out.add(end,local+" = "+e.getValue());
+            }
+            Files.write(ini.toPath(),out,StandardCharsets.UTF_8);
+            return true;
+        } catch(Exception e) { return false; }
+    }
+
+    private void setGraphic(String key, String value) {
+        java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+        changes.put(key,value);
+        if (!writeGraphics(changes)) { say(t("Select a readable game folder before changing graphics settings.","Escolha uma pasta de jogo acessível antes de alterar os gráficos."),true); return; }
+        showGraphics();
+        say(t("Graphics setting saved. Restart the game to apply it.","Configuração gráfica salva. Reinicie o jogo para aplicar."),false);
+    }
+
+    private void setGraphicsPreset(String preset) {
+        java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+        changes.put("video.preset",preset);
+        if ("quality".equals(preset)) {
+            changes.put("video.mode","docked"); changes.put("video.resolution","native"); changes.put("video.upscaler","linear"); changes.put("audio.reverb","1");
+        } else if ("balanced".equals(preset)) {
+            changes.put("video.mode","handheld"); changes.put("video.resolution","native"); changes.put("video.upscaler","fsr"); changes.put("audio.reverb","1");
+        } else {
+            changes.put("video.mode","docked"); changes.put("video.resolution","540"); changes.put("video.upscaler","fsr"); changes.put("video.frame_gen","off"); changes.put("audio.reverb","0");
+        }
+        if (!writeGraphics(changes)) { say(t("Select a readable game folder before changing graphics settings.","Escolha uma pasta de jogo acessível antes de alterar os gráficos."),true); return; }
+        showGraphics();
+        say(t("Graphics preset saved. Restart the game to apply it.","Predefinição gráfica salva. Reinicie o jogo para aplicar."),false);
+    }
+
+    private void showGraphics() {
+        base(t("Graphics Settings","Configurações gráficas"),
+                t("Adjust image quality and performance for the Quest 3. Changes are saved to the game folder's config.ini.","Ajuste qualidade e desempenho para o Quest 3. As alterações são salvas em config.ini."),null);
+        if (readSaved().isEmpty() || !hasPackage(new File(readSaved()))) {
+            say(t("Choose a game folder first.","Escolha uma pasta do jogo primeiro."),true);
+            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showSettings()));
+            return;
+        }
+        String preset=graphicsValue("video.preset","custom");
+        box.addView(button(t("Quality preset","Predefinição Qualidade")+(preset.equals("quality")?" ✓":""),Color.rgb(75,145,105),v -> setGraphicsPreset("quality")));
+        box.addView(button(t("Balanced preset","Predefinição Equilibrada")+(preset.equals("balanced")?" ✓":""),Color.rgb(80,145,175),v -> setGraphicsPreset("balanced")));
+        box.addView(button(t("Performance preset","Predefinição Desempenho")+(preset.equals("low")?" ✓":""),Color.rgb(180,135,65),v -> setGraphicsPreset("low")));
+        box.addView(button(t("Resolution: ","Resolução: ")+graphicsValue("video.resolution","auto")+"  ·  "+t("Next","Próxima"),Color.rgb(110,145,190),v -> {
+            String[] opts={"auto","native","720","900","1080","540"}; String cur=graphicsValue("video.resolution","auto"); int n=0;
+            for(int i=0;i<opts.length;i++)if(opts[i].equals(cur)){n=(i+1)%opts.length;break;} setGraphic("video.resolution",opts[n]);
+        }));
+        box.addView(button(t("Upscaling: ","Escalonamento: ")+graphicsValue("video.upscaler","linear")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.upscaler",graphicsValue("video.upscaler","linear").equals("fsr")?"linear":"fsr")));
+        box.addView(button(t("Anti-aliasing: ","Antisserrilhamento: ")+graphicsValue("video.antialiasing","off")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.antialiasing",graphicsValue("video.antialiasing","off").equals("fxaa")?"off":"fxaa")));
+        box.addView(button(t("FPS counter: ","Contador FPS: ")+graphicsValue("video.show_fps","0")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.show_fps",graphicsValue("video.show_fps","0").equals("1")?"0":"1")));
+        box.addView(button(t("Back to Settings","Voltar às configurações"),Color.rgb(150,130,110),v -> showSettings()));
     }
 
     private void showSaveManager() {
