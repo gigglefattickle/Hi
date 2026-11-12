@@ -119,7 +119,7 @@ public class Home extends Activity {
         String folder = readSaved();
         TextView current = new TextView(this); current.setText(t("Game folder: ","Pasta do jogo: ")+(folder.isEmpty()?t("Not selected","Não selecionada"):folder));
         current.setTextSize(14); current.setTextColor(Color.rgb(100,85,70)); current.setPadding(0,dp(12),0,dp(8)); box.addView(current);
-        box.addView(button(t("Graphics","Gráficos"),Color.rgb(70,155,135),v -> showGraphics()));
+        box.addView(button(t("Video Settings","Configurações de vídeo"),Color.rgb(70,155,135),v -> showGraphics()));
         box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
         box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
     }
@@ -205,7 +205,7 @@ public class Home extends Activity {
     }
 
     private void showGraphics() {
-        base(t("Graphics Settings","Configurações gráficas"),
+        base(t("Video Settings","Configurações de vídeo"),
                 t("Adjust image quality and performance for the Quest 3. Changes are saved to the game folder's config.ini.","Ajuste qualidade e desempenho para o Quest 3. As alterações são salvas em config.ini."),null);
         if (readSaved().isEmpty() || !hasPackage(new File(readSaved()))) {
             say(t("Choose a game folder first.","Escolha uma pasta do jogo primeiro."),true);
