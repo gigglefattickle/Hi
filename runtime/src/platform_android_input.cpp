@@ -251,7 +251,7 @@ void read_pad(PadState& p) {
                 if (buttons[0] & (1ull<<2)) xr_pad.buttons |= kX; else xr_pad.buttons &= ~kX;
                 if (buttons[0] & (1ull<<3)) xr_pad.buttons |= kY; else xr_pad.buttons &= ~kY;
                 if (buttons[0] & (1ull<<4)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
-                if (buttons[0] & (1ull<<5)) xr_pad.buttons |= kStickL; else xr_pad.buttons &= ~kStickL;
+                if (buttons[0] & (1ull<<5)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
             }
             if (active[1]) {
                 xr_pad.rx = int32_t(std::clamp(sticks[2], -1.f, 1.f) * kStickMax);
@@ -260,7 +260,7 @@ void read_pad(PadState& p) {
                 if (grips[1] > 0.55f) xr_pad.buttons |= kR; else xr_pad.buttons &= ~kR;
                 if (buttons[1] & (1ull<<0)) xr_pad.buttons |= kA; else xr_pad.buttons &= ~kA;
                 if (buttons[1] & (1ull<<1)) xr_pad.buttons |= kB; else xr_pad.buttons &= ~kB;
-                if (buttons[1] & (1ull<<5)) xr_pad.buttons |= kStickR; else xr_pad.buttons &= ~kStickR;
+                if (buttons[1] & (1ull<<5)) xr_pad.buttons |= kPlus; else xr_pad.buttons &= ~kPlus;
             }
         }
     }
