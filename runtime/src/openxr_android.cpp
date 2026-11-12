@@ -26,6 +26,7 @@ XrInstance g_xr_instance = XR_NULL_HANDLE;
 XrSystemId g_xr_system = XR_NULL_SYSTEM_ID;
 XrSession g_xr_session = XR_NULL_HANDLE;
 uint32_t g_vk_api_version = VK_API_VERSION_1_1;
+VkFormat g_xr_swapchain_format = VK_FORMAT_UNDEFINED;
 
 
 void xr_log(const char* message, XrResult result = XR_SUCCESS) {
@@ -305,6 +306,7 @@ bool xr_create_stereo(){
   VK_FORMAT_R8G8B8A8_SRGB,VK_FORMAT_B8G8R8A8_SRGB};
  for(VkFormat candidate:preferred){for(auto f:formats)if(f==candidate){fmt=f;break;}if(fmt)break;}
  if(!fmt)return false;
+ g_xr_swapchain_format = static_cast<VkFormat>(fmt);
  for(uint32_t e=0;e<2;e++){
   XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
   ci.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
@@ -352,6 +354,9 @@ bool xr_android_frame_begin() {
  if(XR_FAILED(r)||count!=2){g_xr_render=false;xr_log("xrLocateViews failed",r);}
  xr_update_tracking();
  return g_xr_render;
+}
+uint32_t xr_android_eye_format() {
+ return static_cast<uint32_t>(g_xr_swapchain_format);
 }
 void xr_android_eye_extent(uint32_t eye,uint32_t* width,uint32_t* height) {
  if(eye>=2)return;
