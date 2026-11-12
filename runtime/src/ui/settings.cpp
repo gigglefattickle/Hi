@@ -812,6 +812,21 @@ void page_video() {
         combo("video.mode", "docked", {{"docked", console("video.render.docked")}, {"handheld", tr("video.render.handheld")}}, w);
     });
 
+#if defined(__ANDROID__)
+    // Per-eye alignment is adjusted live while the game is running.
+    section("VR screen position (live)");
+    ImGui::TextWrapped("Move each eye image independently to align the display in your headset.");
+    row("Left eye horizontal", nullptr, [&](float w) { slider("vr.left_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Left eye vertical", nullptr, [&](float w) { slider("vr.left_y_pct", -10, 10, 0, "%d%%", w); });
+    row("Right eye horizontal", nullptr, [&](float w) { slider("vr.right_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Right eye vertical", nullptr, [&](float w) { slider("vr.right_y_pct", -10, 10, 0, "%d%%", w); });
+    if (button("Reset eye positions")) {
+        config_set("vr.left_x_pct", "0"); config_set("vr.left_y_pct", "0");
+        config_set("vr.right_x_pct", "0"); config_set("vr.right_y_pct", "0");
+        config_save();
+    }
+#endif
+
     section("video.section.performance");
     row("video.preset", "video.preset.desc", [&](float w) {
         combo("video.preset", "custom",
