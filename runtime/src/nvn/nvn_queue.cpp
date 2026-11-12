@@ -40,6 +40,7 @@ void set_present_interval(int interval);  // for vblank_hold (hle_vi.cpp)
 extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
 }
 namespace nx::nvn {
+bool xr_android_is_available();  // OpenXR game pacing is independent of the headset compositor.
 
 // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
 // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
@@ -584,7 +585,9 @@ void pace_present(int interval) {
     if (off || interval <= 0) return;
     if (g_frame < fast_until) interval = 1;
     set_present_interval(interval);  // also when paced by vsync: vblank_hold (hle_vi.cpp) holds each image this long
-    if (present_vsync_paced()) return;
+    // OpenXR has its own compositor clock (72/80/90/120 Hz). Do not let the Android
+    // surface-vsync path bypass the guest's 60 Hz simulation pacing while in VR.
+    if (present_vsync_paced() && !xr_android_is_available()) return;
     uint64_t now = plat::monotonic_ns();
     if (next > now) plat::sleep_ns(next - now), now = plat::monotonic_ns();
     static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
