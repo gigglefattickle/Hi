@@ -286,30 +286,7 @@ void xr_update_tracking(){
     if(k==5 && (down || (XR_SUCCEEDED(br)&&bs.isActive)))
      __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","stick-click hand=%d active=%d down=%d result=%d",h,int(bs.isActive),int(down),int(br));
    }}
-  // Hold both Touch controller thumbsticks for one second to toggle the in-game settings.
-  // Log transitions to distinguish missing controller input from a failed UI toggle.
-  using Clock = std::chrono::steady_clock;
-  static Clock::time_point both_sticks_since{};
-  static bool both_sticks_fired = false;
-  static bool previous_both_sticks_down = false;
-  const bool both_sticks_down = g_xr_buttons[0][5] && g_xr_buttons[1][5];
-  if (both_sticks_down != previous_both_sticks_down) {
-      __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","both-stick state=%d left=%d right=%d",
-                          int(both_sticks_down),int(g_xr_buttons[0][5]),int(g_xr_buttons[1][5]));
-      previous_both_sticks_down = both_sticks_down;
-  }
-  if (!both_sticks_down) {
-      both_sticks_since = Clock::time_point{};
-      both_sticks_fired = false;
-  } else if (!both_sticks_fired) {
-      const auto now = Clock::now();
-      if (both_sticks_since == Clock::time_point{}) both_sticks_since = now;
-      else if (now - both_sticks_since >= std::chrono::seconds(1)) {
-          __android_log_print(ANDROID_LOG_INFO,"ACNH-OpenXR","both-stick hold complete; toggling settings");
-          nx::ui::ui_toggle();
-          both_sticks_fired = true;
-      }
-  }
+
 }
 
 bool xr_create_stereo(){
