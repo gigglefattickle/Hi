@@ -10,6 +10,7 @@
 #include <android/log.h>
 #include <android_native_app_glue.h>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <mutex>
 #include <atomic>
@@ -272,7 +273,7 @@ void xr_update_tracking(){
  XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
  if(XR_SUCCEEDED(p_locate_space(g_xr_view,g_xr_local,g_xr_time,&head))&&(head.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(head.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_head_pose=head.pose;g_xr_head_valid=true;}else g_xr_head_valid=false;
  XrPath hands[2]{};p_string_to_path(g_xr_instance,"/user/hand/left",&hands[0]);p_string_to_path(g_xr_instance,"/user/hand/right",&hands[1]);
- bool left_menu_down = false;
+ 
  for(int h=0;h<2;h++){XrActionStateGetInfo gi{XR_TYPE_ACTION_STATE_GET_INFO};gi.subactionPath=hands[h];gi.action=g_xr_hand_pose;
  XrActionStatePose ps{XR_TYPE_ACTION_STATE_POSE};if(XR_SUCCEEDED(p_get_pose(g_xr_session,&gi,&ps))&&ps.isActive){
  XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};if(XR_SUCCEEDED(p_locate_space(g_xr_hand_space[h],g_xr_local,g_xr_time,&loc))&&(loc.locationFlags&XR_SPACE_LOCATION_POSITION_VALID_BIT)&&(loc.locationFlags&XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)){g_xr_hand_pose_value[h]=loc.pose;g_xr_hand_active[h]=true;}else g_xr_hand_active[h]=false;}else g_xr_hand_active[h]=false;
@@ -281,12 +282,25 @@ void xr_update_tracking(){
  XrActionStateVector2f v{XR_TYPE_ACTION_STATE_VECTOR2F};gi.action=g_xr_stick;g_xr_stick_value[h]={0,0};if(XR_SUCCEEDED(p_get_vector(g_xr_session,&gi,&v)))g_xr_stick_value[h]=v.isActive?v.currentState:XrVector2f{0,0};
   XrActionStateBoolean bs{XR_TYPE_ACTION_STATE_BOOLEAN};XrAction face[6]={g_xr_a,g_xr_b,g_xr_x,g_xr_y,g_xr_menu,g_xr_stick_click};
   for(int k=0;k<6;k++){gi.action=face[k];bool down=XR_SUCCEEDED(p_get_boolean(g_xr_session,&gi,&bs))&&bs.isActive&&bs.currentState;
-   if(h==0&&k==4)left_menu_down=down;
    g_xr_buttons[h][k]=down;}}
- // The Quest left-controller menu button opens/closes the in-game PC-style settings screen.
- static bool left_menu_was_down = false;
- if(left_menu_down&&!left_menu_was_down)nx::ui::ui_toggle();
- left_menu_was_down=left_menu_down;
+ // Hold both Touch controller thumbsticks for one second to toggle the in-game settings.
+ // The left system-menu button is reserved by the Quest OS and must not be intercepted.
+ using Clock = std::chrono::steady_clock;
+ static Clock::time_point both_sticks_since{};
+ static bool both_sticks_fired = false;
+ const bool both_sticks_down = g_xr_buttons[0][5] && g_xr_buttons[1][5];
+ if (!both_sticks_down) {
+     both_sticks_since = Clock::time_point{};
+     both_sticks_fired = false;
+ } else if (!both_sticks_fired) {
+     const auto now = Clock::now();
+     if (both_sticks_since == Clock::time_point{}) {
+         both_sticks_since = now;
+     } else if (now - both_sticks_since >= std::chrono::seconds(1)) {
+         nx::ui::ui_toggle();
+         both_sticks_fired = true;
+     }
+ }
 }
 
 bool xr_create_stereo(){
