@@ -64,6 +64,9 @@ const Page kPages[] = {
     {"tab.game", rgb(124, 194, 103), 0},  {"tab.video", rgb(79, 179, 217), 1},   {"tab.audio", rgb(245, 166, 35), 2},
     {"tab.controls", rgb(155, 125, 212), 3}, {"tab.saves", rgb(232, 115, 122), 4}, {"tab.online", rgb(72, 190, 170), kIconBox},
     {"tab.amiibo", rgb(255, 180, 80), kIconKey}, {"tab.about", rgb(176, 140, 100), 5},
+#if defined(__ANDROID__)
+    {"VR screen", rgb(79, 179, 217), 1},
+#endif
 };
 constexpr int kPageCount = int(sizeof(kPages) / sizeof(kPages[0]));
 
@@ -812,21 +815,6 @@ void page_video() {
         combo("video.mode", "docked", {{"docked", console("video.render.docked")}, {"handheld", tr("video.render.handheld")}}, w);
     });
 
-#if defined(__ANDROID__)
-    // Per-eye alignment is adjusted live while the game is running.
-    section("VR screen position (live)");
-    ImGui::TextWrapped("Move each eye image independently to align the display in your headset.");
-    row("Left eye horizontal", nullptr, [&](float w) { slider("vr.left_x_pct", -10, 10, 0, "%d%%", w); });
-    row("Left eye vertical", nullptr, [&](float w) { slider("vr.left_y_pct", -10, 10, 0, "%d%%", w); });
-    row("Right eye horizontal", nullptr, [&](float w) { slider("vr.right_x_pct", -10, 10, 0, "%d%%", w); });
-    row("Right eye vertical", nullptr, [&](float w) { slider("vr.right_y_pct", -10, 10, 0, "%d%%", w); });
-    if (button("Reset eye positions")) {
-        config_set("vr.left_x_pct", "0"); config_set("vr.left_y_pct", "0");
-        config_set("vr.right_x_pct", "0"); config_set("vr.right_y_pct", "0");
-        config_save();
-    }
-#endif
-
     section("video.section.performance");
     row("video.preset", "video.preset.desc", [&](float w) {
         combo("video.preset", "custom",
@@ -1273,6 +1261,26 @@ void report_section() {
 #endif
 }
 
+#if defined(__ANDROID__)
+void page_vr_screen() {
+    section("VR screen position");
+    ImGui::TextWrapped("Adjust the game image inside your headset. Changes apply live to each eye.");
+    section("Left eye");
+    row("Horizontal position", nullptr, [&](float w) { slider("vr.left_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Vertical position", nullptr, [&](float w) { slider("vr.left_y_pct", -10, 10, 0, "%d%%", w); });
+    section("Right eye");
+    row("Horizontal position", nullptr, [&](float w) { slider("vr.right_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Vertical position", nullptr, [&](float w) { slider("vr.right_y_pct", -10, 10, 0, "%d%%", w); });
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+    if (button("Reset eye positions")) {
+        config_set("vr.left_x_pct", "0"); config_set("vr.left_y_pct", "0");
+        config_set("vr.right_x_pct", "0"); config_set("vr.right_y_pct", "0");
+        config_save();
+        toast("VR screen position reset");
+    }
+}
+#endif
+
 void page_about() {
     ImGui::TextWrapped("%s", trf("about.version", NX_VERSION_STRING).c_str());
     ImGui::Dummy(ImVec2(0, 6 * g_scale));
@@ -1700,6 +1708,10 @@ bool settings_draw(float scale, ImFont* title, float opening) {
         case 4: page_saves(); break;
         case 5: page_online(); break;
         case 6: settings_page_amiibo(g_scale); break;
+#if defined(__ANDROID__)
+        case 8: page_vr_screen(); break;
+#endif
+        case 7: page_about(); break;
         default: page_about(); break;
     }
     g_page_navigation = false;
