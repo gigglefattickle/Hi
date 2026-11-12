@@ -39,6 +39,7 @@ bool xr_android_get_vulkan_device_extensions(std::string*);
 bool xr_android_frame_begin();
 bool xr_android_acquire_eye(uint32_t eye, VkImage* image);
 void xr_android_eye_extent(uint32_t eye, uint32_t* width, uint32_t* height);
+uint32_t xr_android_eye_format();
 void xr_android_frame_end();
 
 uint32_t xr_android_vulkan_api_version();
@@ -1373,6 +1374,7 @@ void present_image(const int32_t* crop, Record&& record) {
                 xr_android_eye_extent(eye, &width, &height);
                 GpuImage dst;
                 dst.image = eyes[eye];
+                dst.format = static_cast<VkFormat>(xr_android_eye_format());
                 dst.width = width;
                 dst.height = height;
                 dst.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
