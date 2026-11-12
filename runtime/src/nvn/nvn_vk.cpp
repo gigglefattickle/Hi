@@ -1380,12 +1380,28 @@ void present_image(const int32_t* crop, Record&& record) {
                 blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                 blit.srcOffsets[1] = {int32_t(src->width), int32_t(src->height), 1};
                 blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                blit.dstOffsets[1] = {int32_t(width), int32_t(height), 1};
-                if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
-                    VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
-                    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                    p_vkCmdClearColorImage(g_cb, dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+
+                // Quest eye swapchains are close to square while the game's framebuffer is widescreen.
+                // Fit the complete game image inside each eye instead of stretching it to the eye extent.
+                // Clear first so the unused area is a stable black letterbox rather than stale swapchain data.
+                const float source_aspect = float(src->width) / float(std::max(1u, src->height));
+                const float eye_aspect = float(width) / float(std::max(1u, height));
+                int32_t fitted_width = int32_t(width);
+                int32_t fitted_height = int32_t(height);
+                if (source_aspect > eye_aspect) {
+                    fitted_height = std::max(1, int32_t(float(width) / source_aspect + 0.5f));
                 } else {
+                    fitted_width = std::max(1, int32_t(float(height) * source_aspect + 0.5f));
+                }
+                const int32_t offset_x = (int32_t(width) - fitted_width) / 2;
+                const int32_t offset_y = (int32_t(height) - fitted_height) / 2;
+                blit.dstOffsets[0] = {offset_x, offset_y, 0};
+                blit.dstOffsets[1] = {offset_x + fitted_width, offset_y + fitted_height, 1};
+
+                VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
+                VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                p_vkCmdClearColorImage(g_cb, dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+                if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED && src->width && src->height) {
                     p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                      dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
                 }
