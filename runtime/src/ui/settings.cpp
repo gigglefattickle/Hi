@@ -65,7 +65,7 @@ const Page kPages[] = {
     {"tab.controls", rgb(155, 125, 212), 3}, {"tab.saves", rgb(232, 115, 122), 4}, {"tab.online", rgb(72, 190, 170), kIconBox},
     {"tab.amiibo", rgb(255, 180, 80), kIconKey}, {"tab.about", rgb(176, 140, 100), 5},
 #if defined(__ANDROID__)
-    {"VR screen", rgb(79, 179, 217), 1},
+    {"VR screen", rgb(79, 179, 217), 1}, {"Camera trace", rgb(245, 166, 35), 1},
 #endif
 };
 constexpr int kPageCount = int(sizeof(kPages) / sizeof(kPages[0]));
@@ -571,18 +571,6 @@ void store_custom_game_time(int year, int month, int day, int hour, int minute) 
 }
 
 void page_game() {
-#if defined(__ANDROID__)
-    // Keep camera tracing one tap away from the main in-app launcher/settings page.
-    section("Camera trace");
-    ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
-    row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
-        toggle("vr.camera_trace", false, w);
-    });
-    if (button("Open Camera Trace Folder")) {
-        plat::open_path(plat::data_root());
-    }
-    ImGui::Dummy(ImVec2(0, 8 * g_scale));
-#endif
     Choices langs = {{"auto", tr("game.language.system")},
                      {"en-US", "English (US)"},     {"en-GB", "English (UK)"},  {"es", "Español (España)"},
                      {"es-419", "Español (Latinoamérica)"}, {"fr", "Français"},   {"fr-CA", "Français (Canada)"},
@@ -1274,6 +1262,18 @@ void report_section() {
 }
 
 #if defined(__ANDROID__)
+void page_camera_trace() {
+    section("Camera trace");
+    ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
+    row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
+        toggle("vr.camera_trace", false, w);
+    });
+    if (button("Open Camera Trace Folder")) {
+        plat::open_path(plat::data_root());
+    }
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+}
+
 void page_vr_screen() {
     section("VR screen position");
     ImGui::TextWrapped("Adjust the game image inside your headset. Changes apply live to each eye.");
@@ -1722,6 +1722,7 @@ bool settings_draw(float scale, ImFont* title, float opening) {
         case 6: settings_page_amiibo(g_scale); break;
 #if defined(__ANDROID__)
         case 8: page_vr_screen(); break;
+        case 9: page_camera_trace(); break;
 #endif
         case 7: page_about(); break;
         default: page_about(); break;
