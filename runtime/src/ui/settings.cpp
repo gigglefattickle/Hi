@@ -1263,6 +1263,13 @@ void report_section() {
 
 #if defined(__ANDROID__)
 void page_vr_screen() {
+    section("Camera diagnostics");
+    ImGui::TextWrapped("Record world-camera positions to a text file while playing. Restart the app after changing this setting.");
+    row("Camera Trace", "Writes xr-camera-trace.txt in the app data folder (once per second).", [&](float w) { toggle("vr.camera_trace", false, w); });
+    ImGui::Dummy(ImVec2(0, 4 * g_scale));
+    if (button("Open Camera Trace Folder")) {
+        plat::open_path(plat::data_root());
+    }
     section("VR screen position");
     ImGui::TextWrapped("Adjust the game image inside your headset. Changes apply live to each eye.");
     section("Left eye");
