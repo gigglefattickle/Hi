@@ -116,7 +116,6 @@ public class Home extends Activity {
                         : t("Choose your prepared game folder to get started.","Escolha a pasta preparada do jogo para começar.")));
         if (valid) box.addView(button(t("Play","Jogar"),Color.rgb(90,170,90),v -> check(saved,false)));
         else box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
-        box.addView(button(t("Coming Soon","Em breve"),Color.rgb(176,140,100),v -> say(t("This section is coming soon.","Esta seção estará disponível em breve."),false)));
         box.addView(button(t("Save Manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
         if (valid) box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(150,130,110),v -> pick()));
         for (final String f : found()) if (!valid || !f.equals(saved))
@@ -129,8 +128,36 @@ public class Home extends Activity {
         TextView current = new TextView(this); current.setText(t("Game folder: ","Pasta do jogo: ")+(folder.isEmpty()?t("Not selected","Não selecionada"):folder));
         current.setTextSize(14); current.setTextColor(Color.rgb(100,85,70)); current.setPadding(0,dp(12),0,dp(8)); box.addView(current);
         box.addView(button(t("Video Settings","Configurações de vídeo"),Color.rgb(70,155,135),v -> showGraphics()));
+        box.addView(button(t("VR Settings","Configurações de VR"),Color.rgb(115,150,185),v -> showVrSettings()));
         box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
         box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+    }
+
+    private void showVrSettings() {
+        base(t("VR Settings","Configurações de VR"),
+                t("Configure immersive first-person controls for the Quest 3.","Configure os controles imersivos em primeira pessoa para o Quest 3."),null);
+        if (readSaved().isEmpty() || !hasPackage(new File(readSaved()))) {
+            say(t("Choose a game folder first.","Escolha uma pasta do jogo primeiro."),true);
+            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showSettings()));
+            return;
+        }
+        boolean enabled = graphicsValue("vr.first_person","0").equals("1");
+        box.addView(button(t("First-person head look: ","Visão em primeira pessoa: ")+(enabled?t("On","Ligada"):t("Off","Desligada")),
+                enabled?Color.rgb(75,145,105):Color.rgb(110,145,190),v -> {
+                    java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+                    changes.put("vr.first_person",enabled?"0":"1");
+                    if (!writeGraphics(changes)) {
+                        say(t("Could not save the VR setting.","Não foi possível salvar a configuração de VR."),true);
+                        return;
+                    }
+                    showVrSettings();
+                    say(t("Setting saved. Restart the game to apply it.","Configuração salva. Reinicie o jogo para aplicar."),false);
+                }));
+        TextView note = new TextView(this);
+        note.setText(t("Head-look mode is experimental. It requires the game camera integration to be enabled in a compatible build.",
+                "O modo de olhar com a cabeça é experimental. Ele requer a integração da câmera do jogo em uma versão compatível."));
+        note.setTextSize(14); note.setTextColor(Color.rgb(120,100,80)); note.setPadding(0,dp(10),0,dp(8)); box.addView(note);
+        box.addView(button(t("Back to Settings","Voltar às configurações"),Color.rgb(150,130,110),v -> showSettings()));
     }
 
     private String graphicsValue(String key, String fallback) {
