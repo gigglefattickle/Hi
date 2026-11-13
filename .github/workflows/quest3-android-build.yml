@@ -1,6 +1,8 @@
 name: Quest 3 Android ARM64 build
 
 on:
+  push:
+    branches: [quest3-openxr-integration]
   pull_request:
     branches: [main]
     paths:
