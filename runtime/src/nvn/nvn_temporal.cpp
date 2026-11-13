@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -197,6 +198,18 @@ void lookat_update(CPU& c) {
                 double(snapshot.pos[0]), double(snapshot.pos[1]), double(snapshot.pos[2]),
                 double(snapshot.at[0]), double(snapshot.at[1]), double(snapshot.at[2]),
                 double(snapshot.up[0]), double(snapshot.up[1]), double(snapshot.up[2]));
+            // Persist a compact trace in the app's data folder so Quest-only users can retrieve it.
+            // The hook is rate-limited above, so this opens/writes at most once per second.
+            const std::string trace_path = plat::data_root() + "/xr-camera-trace.txt";
+            std::ofstream trace(trace_path, std::ios::app);
+            if (trace) {
+                trace << "time_ns " << now
+                      << " object +" << std::hex << (cam - kHeapBase)
+                      << " call +" << snapshot.lr << std::dec
+                      << " pos " << snapshot.pos[0] << " " << snapshot.pos[1] << " " << snapshot.pos[2]
+                      << " at " << snapshot.at[0] << " " << snapshot.at[1] << " " << snapshot.at[2]
+                      << " up " << snapshot.up[0] << " " << snapshot.up[1] << " " << snapshot.up[2] << "\\n";
+            }
         }
     }
 }
