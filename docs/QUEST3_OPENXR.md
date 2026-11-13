@@ -99,3 +99,12 @@ Use the trace from a repeatable scene (field, indoors, and while the player anim
 - Meta OpenXR instance/session and Vulkan graphics binding: https://developers.meta.com/vr/documentation/native/android/mobile-openxr-instance-session/
 - Meta OpenXR swapchains: https://developers.meta.com/vr/documentation/native/android/mobile-openxr-swapchains/
 - Khronos OpenXR SDK sample: https://github.com/KhronosGroup/OpenXR-SDK-Source/tree/main/src/tests/hello_xr
+
+
+## Quest camera trace (no PC required)
+
+On Quest 3, open **Settings → VR screen → Camera diagnostics**, enable **Camera Trace**, then restart the app. Play for at least 30 seconds in each useful situation (outdoors standing, walking, turning, and indoors). The app appends one sample per second to:
+
+`<app data folder>/xr-camera-trace.txt`
+
+Return to Settings → VR screen and choose **Open Camera Trace Folder**. Use the Quest file picker to locate and share/copy `xr-camera-trace.txt` using an available file-sharing destination. The trace contains camera transforms and game-relative object/callsite offsets; it does not change the player's world position. Disable Camera Trace when finished to avoid unnecessary writes.
