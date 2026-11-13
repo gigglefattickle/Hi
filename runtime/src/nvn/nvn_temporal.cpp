@@ -169,15 +169,36 @@ std::shared_ptr<const TemporalFrame> snapshot() {
 }
 
 // main+37e4624 (3.0.2) / +37e4634 (3.0.3): sead::LookAtCamera::doUpdateMatrix(this = x0, Matrix34f* dst = x1).
+// NX_XR_CAMERA_TRACE=1 records the live LookAtCamera objects on Android too. The Quest build has no game assets or
+// skeleton metadata, so this trace is the first step toward identifying the actual field camera and the player's
+// animated head transform. It is deliberately observational: it never changes the game's camera or world position.
 void lookat_update(CPU& c) {
-    if (!temporal_on()) return;
+    static const bool xr_trace = std::getenv("NX_XR_CAMERA_TRACE") != nullptr;
+    if (!temporal_on() && !xr_trace) return;
     const uint64_t cam = c.x[0];
     if (cam < kHeapBase || cam >= kHeapBase + heap_size()) return;
     const float* f = reinterpret_cast<const float*>(cam + 0x38);
-    std::lock_guard lk(g_cam_lock);
-    LookAt& l = g_lookats[cam];
-    std::memcpy(l.pos, f, 12), std::memcpy(l.at, f + 3, 12), std::memcpy(l.up, f + 6, 12);
-    l.lr = c.x[30] - kModuleBase, l.updates++, l.present = g_present.load(std::memory_order_relaxed);
+    LookAt snapshot;
+    {
+        std::lock_guard lk(g_cam_lock);
+        LookAt& l = g_lookats[cam];
+        std::memcpy(l.pos, f, 12), std::memcpy(l.at, f + 3, 12), std::memcpy(l.up, f + 6, 12);
+        l.lr = c.x[30] - kModuleBase, l.updates++, l.present = g_present.load(std::memory_order_relaxed);
+        snapshot = l;
+    }
+    if (xr_trace) {
+        static std::atomic<uint64_t> next_log{0};
+        const uint64_t now = plat::monotonic_ns();
+        uint64_t due = next_log.load(std::memory_order_relaxed);
+        if (now >= due && next_log.compare_exchange_strong(due, now + 1'000'000'000,
+                                                           std::memory_order_relaxed)) {
+            log("xr camera: object +%llx call +%llx pos %.3f %.3f %.3f at %.3f %.3f %.3f up %.3f %.3f %.3f",
+                (unsigned long long)(cam - kHeapBase), (unsigned long long)snapshot.lr,
+                double(snapshot.pos[0]), double(snapshot.pos[1]), double(snapshot.pos[2]),
+                double(snapshot.at[0]), double(snapshot.at[1]), double(snapshot.at[2]),
+                double(snapshot.up[0]), double(snapshot.up[1]), double(snapshot.up[2]));
+        }
+    }
 }
 
 }  // namespace
