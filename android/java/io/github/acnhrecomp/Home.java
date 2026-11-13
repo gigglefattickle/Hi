@@ -122,41 +122,78 @@ public class Home extends Activity {
             box.addView(button(t("Use detected game folder","Usar pasta detectada"),Color.rgb(90,170,90),v -> check(f,false)));
     }
 
+    private void settingsSection(String label) {
+        TextView heading = new TextView(this);
+        heading.setText(label.toUpperCase(Locale.ROOT));
+        heading.setTextSize(12);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.setLetterSpacing(0.08f);
+        heading.setTextColor(Color.rgb(105,125,105));
+        heading.setPadding(dp(4),dp(18),dp(4),dp(2));
+        box.addView(heading);
+    }
+
+    private void settingsInfo(String title, String detail, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16),dp(13),dp(16),dp(13));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(245,244,226));
+        bg.setCornerRadius(dp(16));
+        bg.setStroke(dp(1),Color.rgb(225,224,202));
+        card.setBackground(bg);
+        TextView name = new TextView(this);
+        name.setText(title); name.setTextSize(16); name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setTextColor(accent); card.addView(name);
+        TextView description = new TextView(this);
+        description.setText(detail); description.setTextSize(13);
+        description.setTextColor(Color.rgb(115,105,88));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
+        p.topMargin=dp(4); card.addView(description,p);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1,-2);
+        cp.topMargin=dp(8); box.addView(card,cp);
+    }
+
     private void showSettings() {
-        base(t("Settings","Configurações"),t("Launcher settings","Configurações do inicializador"),null);
+        base(t("Settings","Configurações"),t("Manage your game, display and headset options.","Gerencie o jogo, a imagem e as opções do headset."),null);
         String folder = readSaved();
-        TextView current = new TextView(this); current.setText(t("Game folder: ","Pasta do jogo: ")+(folder.isEmpty()?t("Not selected","Não selecionada"):folder));
-        current.setTextSize(14); current.setTextColor(Color.rgb(100,85,70)); current.setPadding(0,dp(12),0,dp(8)); box.addView(current);
-        box.addView(button(t("Video Settings","Configurações de vídeo"),Color.rgb(70,155,135),v -> showGraphics()));
-        box.addView(button(t("VR Settings","Configurações de VR"),Color.rgb(115,150,185),v -> showVrSettings()));
-        box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
-        box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+        boolean ready = !folder.isEmpty() && hasPackage(new File(folder));
+        settingsSection(t("GAME","JOGO"));
+        settingsInfo(t("Game folder","Pasta do jogo"),
+                ready ? folder : t("No prepared game folder selected.","Nenhuma pasta de jogo preparada selecionada."),
+                Color.rgb(92,105,78));
+        box.addView(button(t("Choose / change game folder","Escolher / trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
+        settingsSection(t("DISPLAY","IMAGEM"));
+        box.addView(button(t("Video settings","Configurações de vídeo"),Color.rgb(70,155,135),v -> showGraphics()));
+        settingsSection(t("HEADSET","HEADSET"));
+        box.addView(button(t("VR status & controls","Estado e controles VR"),Color.rgb(105,135,175),v -> showVrSettings()));
+        settingsSection(t("APP","APLICATIVO"));
+        box.addView(button(t("Save manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
+        box.addView(button(t("Back to launcher","Voltar ao inicializador"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
     }
 
     private void showVrSettings() {
-        base(t("VR Settings","Configurações de VR"),
-                t("Configure immersive first-person controls for the Quest 3.","Configure os controles imersivos em primeira pessoa para o Quest 3."),null);
-        if (readSaved().isEmpty() || !hasPackage(new File(readSaved()))) {
-            say(t("Choose a game folder first.","Escolha uma pasta do jogo primeiro."),true);
-            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showSettings()));
-            return;
-        }
-        boolean enabled = graphicsValue("vr.first_person","0").equals("1");
-        box.addView(button(t("First-person head look: ","Visão em primeira pessoa: ")+(enabled?t("On","Ligada"):t("Off","Desligada")),
-                enabled?Color.rgb(75,145,105):Color.rgb(110,145,190),v -> {
-                    java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
-                    changes.put("vr.first_person",enabled?"0":"1");
-                    if (!writeGraphics(changes)) {
-                        say(t("Could not save the VR setting.","Não foi possível salvar a configuração de VR."),true);
-                        return;
-                    }
-                    showVrSettings();
-                    say(t("Setting saved. Restart the game to apply it.","Configuração salva. Reinicie o jogo para aplicar."),false);
-                }));
-        TextView note = new TextView(this);
-        note.setText(t("Head-look mode is experimental. It requires the game camera integration to be enabled in a compatible build.",
-                "O modo de olhar com a cabeça é experimental. Ele requer a integração da câmera do jogo em uma versão compatível."));
-        note.setTextSize(14); note.setTextColor(Color.rgb(120,100,80)); note.setPadding(0,dp(10),0,dp(8)); box.addView(note);
+        base(t("VR Status","Estado VR"),
+                t("Quest 3 headset tracking and game-camera support.","Rastreamento do Quest 3 e suporte à câmera do jogo."),null);
+        settingsSection(t("CURRENT DISPLAY MODE","MODO DE IMAGEM ATUAL"));
+        settingsInfo(t("Flat mirrored image","Imagem plana espelhada"),
+                t("The same 2D game frame is currently sent to both eyes. This is not true stereoscopic 3D.",
+                  "O mesmo quadro 2D do jogo é enviado aos dois olhos. Isso não é 3D estereoscópico real."),
+                Color.rgb(165,105,65));
+        settingsSection(t("NOT IMPLEMENTED YET","AINDA NÃO IMPLEMENTADO"));
+        settingsInfo(t("True stereoscopic world rendering","Renderização estereoscópica real"),
+                t("The game scene must be rendered separately for the left and right eyes with correct camera projection.",
+                  "A cena precisa ser renderizada separadamente para o olho esquerdo e direito, com projeção de câmera correta."),
+                Color.rgb(105,125,155));
+        settingsInfo(t("First-person head look","Visão em primeira pessoa com movimento da cabeça"),
+                t("Head pose is tracked by OpenXR, but it is not connected to the game's world camera yet. There is no working toggle for this feature right now.",
+                  "A posição da cabeça é rastreada pelo OpenXR, mas ainda não está conectada à câmera do mundo do jogo. No momento, não há um botão funcional para esse recurso."),
+                Color.rgb(105,125,155));
+        settingsSection(t("AVAILABLE","DISPONÍVEL"));
+        settingsInfo(t("OpenXR headset and controller tracking","Rastreamento OpenXR do headset e controles"),
+                t("Headset and Touch controller poses are received by the runtime; camera and hand-model integration remains in progress.",
+                  "O runtime recebe as posições do headset e dos controles Touch; a integração da câmera e dos modelos das mãos ainda está em desenvolvimento."),
+                Color.rgb(75,135,100));
         box.addView(button(t("Back to Settings","Voltar às configurações"),Color.rgb(150,130,110),v -> showSettings()));
     }
 
