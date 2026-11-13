@@ -116,6 +116,7 @@ const Mapping kMappings[] = {
     {"game.language", "NX_LANGUAGE", game_language, true},
     {"video.fullscreen", "NX_FULLSCREEN", on_off, false},
     {"video.show_fps", "NX_SHOW_FPS", on_off, false},
+    {"vr.camera_trace", "NX_XR_CAMERA_TRACE", on_off, true},
     {"video.window", "NX_RESOLUTION", auto_empty, true},
     {"video.mode", "NX_HANDHELD", handheld, true},
     {"video.upscaler", "NX_FSR", fsr, true},
