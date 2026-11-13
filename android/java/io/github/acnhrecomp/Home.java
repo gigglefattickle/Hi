@@ -41,7 +41,7 @@ public class Home extends Activity {
     static { System.loadLibrary("acnh"); }
     private static native String nativeLoadGame(String folder, String files);
 
-    private static final int PICK = 1, EXPORT_SAVE = 2, IMPORT_SAVE = 3;
+    private static final int PICK = 1, EXPORT_SAVE = 2, IMPORT_SAVE = 3, EXPORT_TRACE = 4;
     private static final String GAME_LIB = "libacnh_game.so";
     private final boolean pt = Locale.getDefault().getLanguage().equals("pt");
     private LinearLayout box;
@@ -117,9 +117,27 @@ public class Home extends Activity {
         if (valid) box.addView(button(t("Play","Jogar"),Color.rgb(90,170,90),v -> check(saved,false)));
         else box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
         box.addView(button(t("Save Manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
+        box.addView(button(t("📷 Camera Trace","📷 Registro da câmera"),Color.rgb(80,145,175),v -> showCameraTrace()));
         if (valid) box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(150,130,110),v -> pick()));
         for (final String f : found()) if (!valid || !f.equals(saved))
             box.addView(button(t("Use detected game folder","Usar pasta detectada"),Color.rgb(90,170,90),v -> check(f,false)));
+    }
+
+    private void showCameraTrace() {
+        File trace = new File(readSaved(), "xr-camera-trace.txt");
+        base(t("Camera Trace","Registro da câmera"),
+                t("Export the Quest 3 camera diagnostic log so it can be shared here.",
+                  "Exporte o registro de diagnóstico da câmera do Quest 3 para compartilhá-lo aqui."),
+                trace.isFile() ? t("Trace file found · ","Arquivo encontrado · ")+trace.length()+" bytes"
+                               : t("No trace file yet. Enable Camera Trace in in-game Settings, restart the game, and reproduce the issue.",
+                                   "Nenhum registro ainda. Ative Camera Trace nas configurações do jogo, reinicie e reproduza o problema."));
+        box.addView(button(t("Export Camera Trace","Exportar registro"),Color.rgb(80,145,175),v -> {
+            if (!trace.isFile()) { say(t("No trace file found yet.","Nenhum registro encontrado ainda."),true); return; }
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE,"xr-camera-trace.txt");
+            startActivityForResult(i,EXPORT_TRACE);
+        }));
+        box.addView(button(t("Back to Launcher","Voltar ao inicializador"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
     }
 
     private void settingsSection(String label) {
@@ -385,6 +403,18 @@ public class Home extends Activity {
             final Uri target=uri; new Thread(()->{String err=null;try(OutputStream out=getContentResolver().openOutputStream(target);ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(out))){zipTree(activeSave(),activeSave(),"",zip);}catch(Exception e){err=e.getMessage();}
                 final String msg=err==null?t("Save backup exported.","Backup do save exportado."):t("Export failed: ","Falha ao exportar: ")+err;
                 final boolean failed=err!=null;runOnUiThread(()->{showSaveManager();say(msg,failed);});}).start();
+        } else if(request==EXPORT_TRACE) {
+            final Uri target=uri; final File source=new File(readSaved(),"xr-camera-trace.txt");
+            new Thread(()->{String err=null;
+                try(InputStream in=new BufferedInputStream(new FileInputStream(source));
+                    OutputStream out=getContentResolver().openOutputStream(target)){
+                    if(out==null)throw new Exception("Could not open destination");
+                    byte[] b=new byte[16384]; int n; while((n=in.read(b))!=-1)out.write(b,0,n);
+                }catch(Exception e){err=e.getMessage();}
+                final String msg=err==null?t("Camera trace exported. Attach xr-camera-trace.txt in ChatGPT.","Registro exportado. Anexe xr-camera-trace.txt no ChatGPT.")
+                    :t("Trace export failed: ","Falha ao exportar: ")+err;
+                final boolean failed=err!=null; runOnUiThread(()->{showCameraTrace();say(msg,failed);});
+            }).start();
         } else if(request==IMPORT_SAVE) {
             new AlertDialog.Builder(this).setTitle(t("Replace current save?","Substituir o save atual?"))
                 .setMessage(t("The ZIP backup will replace user/device_save. Export a backup first if you want to keep the current save.","O backup ZIP substituirá user/device_save. Exporte um backup primeiro para manter o save atual."))
