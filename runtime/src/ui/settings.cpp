@@ -571,6 +571,18 @@ void store_custom_game_time(int year, int month, int day, int hour, int minute) 
 }
 
 void page_game() {
+#if defined(__ANDROID__)
+    // Keep camera tracing one tap away from the main in-app launcher/settings page.
+    section("Camera trace");
+    ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
+    row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
+        toggle("vr.camera_trace", false, w);
+    });
+    if (button("Open Camera Trace Folder")) {
+        plat::open_path(plat::data_root());
+    }
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+#endif
     Choices langs = {{"auto", tr("game.language.system")},
                      {"en-US", "English (US)"},     {"en-GB", "English (UK)"},  {"es", "Español (España)"},
                      {"es-419", "Español (Latinoamérica)"}, {"fr", "Français"},   {"fr-CA", "Français (Canada)"},
@@ -1263,13 +1275,6 @@ void report_section() {
 
 #if defined(__ANDROID__)
 void page_vr_screen() {
-    section("Camera diagnostics");
-    ImGui::TextWrapped("Record world-camera positions to a text file while playing. Restart the app after changing this setting.");
-    row("Camera Trace", "Writes xr-camera-trace.txt in the app data folder (once per second).", [&](float w) { toggle("vr.camera_trace", false, w); });
-    ImGui::Dummy(ImVec2(0, 4 * g_scale));
-    if (button("Open Camera Trace Folder")) {
-        plat::open_path(plat::data_root());
-    }
     section("VR screen position");
     ImGui::TextWrapped("Adjust the game image inside your headset. Changes apply live to each eye.");
     section("Left eye");
