@@ -87,6 +87,12 @@ The branch now contains a first end-to-end OpenXR presentation and input path:
 
 The next visual milestone is true per-eye game rendering with separate camera view/projection matrices and the tracked head pose, rather than copying one flat image to both eyes.
 
+## Camera discovery diagnostic
+
+The ACNH `sead::LookAtCamera::doUpdateMatrix` hook records world-camera transforms for temporal diagnostics. On the Quest build it can also be enabled independently of temporal upscaling with `NX_XR_CAMERA_TRACE=1`. Each second it logs the camera object's heap-relative address, the game callsite, and its position/target/up vectors. This is observational only; it does not move the camera or alter the player.
+
+Use the trace from a repeatable scene (field, indoors, and while the player animates) to distinguish the player-follow camera from UI/map cameras. The repository does not contain ACNH model assets or a verified player skeleton/bone palette, so this trace alone cannot identify the animated head bone. That still requires a runtime model/skinning trace or game-asset inspection before a head-anchored first-person camera can be implemented safely.
+
 ## References
 
 - Meta OpenXR support and Android loader setup: https://developers.meta.com/vr/documentation/native/android/mobile-openxr/
