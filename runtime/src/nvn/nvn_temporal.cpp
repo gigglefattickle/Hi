@@ -35,6 +35,9 @@
 #include "nvn_ultrawide.h"
 #include "nvn_vk.h"
 #include "platform.h"
+#if defined(__ANDROID__)
+#include "platform.h"
+#endif
 #include <nx/runtime.h>
 
 #if defined(_WIN32) && (defined(NX_FFX) || defined(NX_DLSS))
@@ -187,6 +190,64 @@ void lookat_update(CPU& c) {
         l.lr = c.x[30] - kModuleBase, l.updates++, l.present = g_present.load(std::memory_order_relaxed);
         snapshot = l;
     }
+#if defined(__ANDROID__)
+    // Experimental first-person mode: anchor the gameplay camera at the traced look-at target plus
+    // the camera's measured eye-height offset, then apply headset rotation relative to the pose
+    // at activation. This changes only the camera object; it never writes player/world transforms.
+    if (config_get_bool("vr.first_person", false)) {
+        float head_pos[3]{}, head_q[4]{0, 0, 0, 1};
+        if (plat::read_xr_head_pose(head_pos, head_q)) {
+            static std::mutex head_ref_lock;
+            static float head_ref[4]{0, 0, 0, 1};
+            static bool have_head_ref = false;
+            float qn = std::sqrt(head_q[0]*head_q[0] + head_q[1]*head_q[1] +
+                                 head_q[2]*head_q[2] + head_q[3]*head_q[3]);
+            if (qn > 0.0001f) for (float& v : head_q) v /= qn;
+            float q0[4];
+            {
+                std::lock_guard lk(head_ref_lock);
+                if (!have_head_ref) {
+                    std::copy(head_q, head_q + 4, head_ref);
+                    have_head_ref = true;
+                }
+                std::copy(head_ref, head_ref + 4, q0);
+            }
+            // delta = current * inverse(reference)
+            float inv[4] = {-q0[0], -q0[1], -q0[2], q0[3]};
+            float dq[4] = {
+                head_q[3]*inv[0] + head_q[0]*inv[3] + head_q[1]*inv[2] - head_q[2]*inv[1],
+                head_q[3]*inv[1] - head_q[0]*inv[2] + head_q[1]*inv[3] + head_q[2]*inv[0],
+                head_q[3]*inv[2] + head_q[0]*inv[1] - head_q[1]*inv[0] + head_q[2]*inv[3],
+                head_q[3]*inv[3] - head_q[0]*inv[0] - head_q[1]*inv[1] - head_q[2]*inv[2]
+            };
+            auto rotate = [&](float x, float y, float z, float& ox, float& oy, float& oz) {
+                float tx = 2.f * (dq[1]*z - dq[2]*y);
+                float ty = 2.f * (dq[2]*x - dq[0]*z);
+                float tz = 2.f * (dq[0]*y - dq[1]*x);
+                ox = x + dq[3]*tx + (dq[1]*tz - dq[2]*ty);
+                oy = y + dq[3]*ty + (dq[2]*tx - dq[0]*tz);
+                oz = z + dq[3]*tz + (dq[0]*ty - dq[1]*tx);
+            };
+            float dx = snapshot.at[0] - snapshot.pos[0];
+            float dz = snapshot.at[2] - snapshot.pos[2];
+            float dl = std::sqrt(dx*dx + dz*dz);
+            if (dl > 0.001f) {
+                dx /= dl; dz /= dl;
+                float fx, fy, fz, ux, uy, uz;
+                rotate(dx, 0.f, dz, fx, fy, fz);
+                rotate(0.f, 1.f, 0.f, ux, uy, uz);
+                float height = std::clamp(std::fabs(snapshot.pos[1] - snapshot.at[1]), 70.f, 120.f);
+                f[0] = snapshot.at[0];
+                f[1] = snapshot.at[1] + height;
+                f[2] = snapshot.at[2];
+                f[3] = f[0] + fx * 1000.f;
+                f[4] = f[1] + fy * 1000.f;
+                f[5] = f[2] + fz * 1000.f;
+                f[6] = ux; f[7] = uy; f[8] = uz;
+            }
+        }
+    }
+#endif
     if (xr_trace) {
         static std::atomic<uint64_t> next_log{0};
         const uint64_t now = plat::monotonic_ns();
