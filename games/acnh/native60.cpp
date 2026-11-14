@@ -65,7 +65,11 @@ constexpr char kPhysics[] = "physics step";
 // animation nodes; this records its arguments so a Quest trace can identify the live player graph before
 // instrumenting the evaluated skeleton palette. It is observational and does not alter actor transforms.
 void character_graph_trace(CPU& c) {
+#if defined(__ANDROID__)
+    static const bool on = true;  // Quest diagnostic build: collect a bounded trace by default.
+#else
     static const bool on = std::getenv("NX_XR_SKELETON_TRACE") != nullptr;
+#endif
     static std::atomic<uint64_t> hits{0};
     const uint64_t n = hits.fetch_add(1, std::memory_order_relaxed);
     if (on && (n < 48 || n % 2048 == 0)) {
