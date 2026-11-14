@@ -194,7 +194,7 @@ void lookat_update(CPU& c) {
     // Experimental first-person mode: anchor the gameplay camera at the traced look-at target plus
     // the camera's measured eye-height offset, then apply headset rotation relative to the pose
     // at activation. This changes only the camera object; it never writes player/world transforms.
-    if (config_get_bool("vr.first_person", false)) {
+    if (config_get_bool("vr.first_person", true)) {
         float head_pos[3]{}, head_q[4]{0, 0, 0, 1};
         if (plat::read_xr_head_pose(head_pos, head_q)) {
             static std::mutex head_ref_lock;
