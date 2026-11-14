@@ -61,6 +61,26 @@ constexpr char kVfx[] = "vfx frame rate";
 // main+3e02b58 (30 steps of 1/30 s) is not per frame and is left alone.
 constexpr char kPhysics[] = "physics step";
 
+// Diagnostic pass for the animated player skeleton. The graph update is the path that advances character
+// animation nodes; this records its arguments so a Quest trace can identify the live player graph before
+// instrumenting the evaluated skeleton palette. It is observational and does not alter actor transforms.
+void character_graph_trace(CPU& c) {
+#if defined(__ANDROID__)
+    static const bool on = true;  // Quest diagnostic build: collect a bounded trace by default.
+#else
+    static const bool on = std::getenv("NX_XR_SKELETON_TRACE") != nullptr;
+#endif
+    static std::atomic<uint64_t> hits{0};
+    const uint64_t n = hits.fetch_add(1, std::memory_order_relaxed);
+    if (on && (n < 48 || n % 2048 == 0)) {
+        log("xr-skeleton: graph hit=%llu this=%#llx reset=%#llx arg2=%#llx step=%g lr=%#llx",
+            (unsigned long long)n, (unsigned long long)c.x[0], (unsigned long long)c.x[1],
+            (unsigned long long)c.x[2], double(c.v[0].f32[0]),
+            (unsigned long long)(c.x[30] - kModuleBase));
+    }
+    if (native60()) c.v[0].f32[0] *= 0.5f;
+}
+
 // The character animation graph update (main+3dc3210: this, w1 "reset", w2, s0 step): each root node is evaluated
 // with the step (main+3dbf770), which advances the nodes' frames, and the resulting (frame, weight) entries are
 // applied to the model's animation slots (main+3dc10e0 -> play slot main+3751af8 / set frame main+38afe40). This is
@@ -70,13 +90,13 @@ constexpr char kCharAnim[] = "character anim step";
 
 }  // namespace
 
-NX_HOOK(0x3dc3298, half_step<kCharAnim>);
+NX_HOOK(0x3dc3298, character_graph_trace);
 NX_HOOK(0x3a1d614, half_step<kLayout>);
 NX_HOOK(0x38b2b34, half_step<kModelAnim>);
 NX_HOOK(0x3a09404, half_step<kVfx>);
 NX_HOOK(0x3e01f08, half_step<kPhysics>);
 // 3.0.3 (games/acnh/hooks-3.0.3.txt): the same instructions 0x10 further.
-NX_HOOK(0x3dc32a8, half_step<kCharAnim>);
+NX_HOOK(0x3dc32a8, character_graph_trace);
 NX_HOOK(0x3a1d624, half_step<kLayout>);
 NX_HOOK(0x38b2b44, half_step<kModelAnim>);
 NX_HOOK(0x3a09414, half_step<kVfx>);

@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -34,6 +35,9 @@
 #include "nvn_ultrawide.h"
 #include "nvn_vk.h"
 #include "platform.h"
+#if defined(__ANDROID__)
+#include "platform.h"
+#endif
 #include <nx/runtime.h>
 
 #if defined(_WIN32) && (defined(NX_FFX) || defined(NX_DLSS))
@@ -169,15 +173,106 @@ std::shared_ptr<const TemporalFrame> snapshot() {
 }
 
 // main+37e4624 (3.0.2) / +37e4634 (3.0.3): sead::LookAtCamera::doUpdateMatrix(this = x0, Matrix34f* dst = x1).
+// NX_XR_CAMERA_TRACE=1 records the live LookAtCamera objects on Android too. The Quest build has no game assets or
+// skeleton metadata, so this trace is the first step toward identifying the actual field camera and the player's
+// animated head transform. It is deliberately observational: it never changes the game's camera or world position.
 void lookat_update(CPU& c) {
-    if (!temporal_on()) return;
+    static const bool xr_trace = std::getenv("NX_XR_CAMERA_TRACE") != nullptr;
+    if (!temporal_on() && !xr_trace) return;
     const uint64_t cam = c.x[0];
     if (cam < kHeapBase || cam >= kHeapBase + heap_size()) return;
-    const float* f = reinterpret_cast<const float*>(cam + 0x38);
-    std::lock_guard lk(g_cam_lock);
-    LookAt& l = g_lookats[cam];
-    std::memcpy(l.pos, f, 12), std::memcpy(l.at, f + 3, 12), std::memcpy(l.up, f + 6, 12);
-    l.lr = c.x[30] - kModuleBase, l.updates++, l.present = g_present.load(std::memory_order_relaxed);
+    float* f = reinterpret_cast<float*>(cam + 0x38);
+    LookAt snapshot;
+    {
+        std::lock_guard lk(g_cam_lock);
+        LookAt& l = g_lookats[cam];
+        std::memcpy(l.pos, f, 12), std::memcpy(l.at, f + 3, 12), std::memcpy(l.up, f + 6, 12);
+        l.lr = c.x[30] - kModuleBase, l.updates++, l.present = g_present.load(std::memory_order_relaxed);
+        snapshot = l;
+    }
+#if defined(__ANDROID__)
+    // Experimental first-person mode: anchor the gameplay camera at the traced look-at target plus
+    // the camera's measured eye-height offset, then apply headset rotation relative to the pose
+    // at activation. This changes only the camera object; it never writes player/world transforms.
+    if (config_get_bool("vr.first_person", true)) {
+        float head_pos[3]{}, head_q[4]{0, 0, 0, 1};
+        if (plat::read_xr_head_pose(head_pos, head_q)) {
+            static std::mutex head_ref_lock;
+            static float head_ref[4]{0, 0, 0, 1};
+            static bool have_head_ref = false;
+            float qn = std::sqrt(head_q[0]*head_q[0] + head_q[1]*head_q[1] +
+                                 head_q[2]*head_q[2] + head_q[3]*head_q[3]);
+            if (qn > 0.0001f) for (float& v : head_q) v /= qn;
+            float q0[4];
+            {
+                std::lock_guard lk(head_ref_lock);
+                if (!have_head_ref) {
+                    std::copy(head_q, head_q + 4, head_ref);
+                    have_head_ref = true;
+                }
+                std::copy(head_ref, head_ref + 4, q0);
+            }
+            // delta = current * inverse(reference)
+            float inv[4] = {-q0[0], -q0[1], -q0[2], q0[3]};
+            float dq[4] = {
+                head_q[3]*inv[0] + head_q[0]*inv[3] + head_q[1]*inv[2] - head_q[2]*inv[1],
+                head_q[3]*inv[1] - head_q[0]*inv[2] + head_q[1]*inv[3] + head_q[2]*inv[0],
+                head_q[3]*inv[2] + head_q[0]*inv[1] - head_q[1]*inv[0] + head_q[2]*inv[3],
+                head_q[3]*inv[3] - head_q[0]*inv[0] - head_q[1]*inv[1] - head_q[2]*inv[2]
+            };
+            auto rotate = [&](float x, float y, float z, float& ox, float& oy, float& oz) {
+                float tx = 2.f * (dq[1]*z - dq[2]*y);
+                float ty = 2.f * (dq[2]*x - dq[0]*z);
+                float tz = 2.f * (dq[0]*y - dq[1]*x);
+                ox = x + dq[3]*tx + (dq[1]*tz - dq[2]*ty);
+                oy = y + dq[3]*ty + (dq[2]*tx - dq[0]*tz);
+                oz = z + dq[3]*tz + (dq[0]*ty - dq[1]*tx);
+            };
+            float dx = snapshot.at[0] - snapshot.pos[0];
+            float dz = snapshot.at[2] - snapshot.pos[2];
+            float dl = std::sqrt(dx*dx + dz*dz);
+            if (dl > 0.001f) {
+                dx /= dl; dz /= dl;
+                float fx, fy, fz, ux, uy, uz;
+                rotate(dx, 0.f, dz, fx, fy, fz);
+                rotate(0.f, 1.f, 0.f, ux, uy, uz);
+                float height = std::clamp(std::fabs(snapshot.pos[1] - snapshot.at[1]), 70.f, 120.f);
+                f[0] = snapshot.at[0];
+                f[1] = snapshot.at[1] + height;
+                f[2] = snapshot.at[2];
+                f[3] = f[0] + fx * 1000.f;
+                f[4] = f[1] + fy * 1000.f;
+                f[5] = f[2] + fz * 1000.f;
+                f[6] = ux; f[7] = uy; f[8] = uz;
+            }
+        }
+    }
+#endif
+    if (xr_trace) {
+        static std::atomic<uint64_t> next_log{0};
+        const uint64_t now = plat::monotonic_ns();
+        uint64_t due = next_log.load(std::memory_order_relaxed);
+        if (now >= due && next_log.compare_exchange_strong(due, now + 1'000'000'000,
+                                                           std::memory_order_relaxed)) {
+            log("xr camera: object +%llx call +%llx pos %.3f %.3f %.3f at %.3f %.3f %.3f up %.3f %.3f %.3f",
+                (unsigned long long)(cam - kHeapBase), (unsigned long long)snapshot.lr,
+                double(snapshot.pos[0]), double(snapshot.pos[1]), double(snapshot.pos[2]),
+                double(snapshot.at[0]), double(snapshot.at[1]), double(snapshot.at[2]),
+                double(snapshot.up[0]), double(snapshot.up[1]), double(snapshot.up[2]));
+            // Persist a compact trace in the app's data folder so Quest-only users can retrieve it.
+            // The hook is rate-limited above, so this opens/writes at most once per second.
+            const std::string trace_path = plat::data_root() + "/xr-camera-trace.txt";
+            std::ofstream trace(trace_path, std::ios::app);
+            if (trace) {
+                trace << "time_ns " << now
+                      << " object +" << std::hex << (cam - kHeapBase)
+                      << " call +" << snapshot.lr << std::dec
+                      << " pos " << snapshot.pos[0] << " " << snapshot.pos[1] << " " << snapshot.pos[2]
+                      << " at " << snapshot.at[0] << " " << snapshot.at[1] << " " << snapshot.at[2]
+                      << " up " << snapshot.up[0] << " " << snapshot.up[1] << " " << snapshot.up[2] << "\\n";
+            }
+        }
+    }
 }
 
 }  // namespace

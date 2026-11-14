@@ -64,6 +64,9 @@ const Page kPages[] = {
     {"tab.game", rgb(124, 194, 103), 0},  {"tab.video", rgb(79, 179, 217), 1},   {"tab.audio", rgb(245, 166, 35), 2},
     {"tab.controls", rgb(155, 125, 212), 3}, {"tab.saves", rgb(232, 115, 122), 4}, {"tab.online", rgb(72, 190, 170), kIconBox},
     {"tab.amiibo", rgb(255, 180, 80), kIconKey}, {"tab.about", rgb(176, 140, 100), 5},
+#if defined(__ANDROID__)
+    {"VR screen", rgb(79, 179, 217), 1}, {"Camera trace", rgb(245, 166, 35), 1},
+#endif
 };
 constexpr int kPageCount = int(sizeof(kPages) / sizeof(kPages[0]));
 
@@ -1258,6 +1261,44 @@ void report_section() {
 #endif
 }
 
+#if defined(__ANDROID__)
+void page_camera_trace() {
+    section("First-person VR");
+    ImGui::TextWrapped("First-person view: Quest head rotation controls where you look. The camera follows the gameplay camera target at approximate eye height; animated head-bone position tracking is not wired up yet.");
+    row("First-person camera", "Uses the gameplay camera target as the character anchor. Restart the app after changing the setting.", [&](float w) {
+        toggle("vr.first_person", true, w);
+    });
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+    section("Camera trace");
+    ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
+    row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
+        toggle("vr.camera_trace", true, w);
+    });
+    if (button("Open Camera Trace Folder")) {
+        plat::open_path(plat::data_root());
+    }
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+}
+
+void page_vr_screen() {
+    section("VR screen position");
+    ImGui::TextWrapped("Adjust the game image inside your headset. Changes apply live to each eye.");
+    section("Left eye");
+    row("Horizontal position", nullptr, [&](float w) { slider("vr.left_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Vertical position", nullptr, [&](float w) { slider("vr.left_y_pct", -10, 10, 0, "%d%%", w); });
+    section("Right eye");
+    row("Horizontal position", nullptr, [&](float w) { slider("vr.right_x_pct", -10, 10, 0, "%d%%", w); });
+    row("Vertical position", nullptr, [&](float w) { slider("vr.right_y_pct", -10, 10, 0, "%d%%", w); });
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
+    if (button("Reset eye positions")) {
+        config_set("vr.left_x_pct", "0"); config_set("vr.left_y_pct", "0");
+        config_set("vr.right_x_pct", "0"); config_set("vr.right_y_pct", "0");
+        config_save();
+        toast("VR screen position reset");
+    }
+}
+#endif
+
 void page_about() {
     ImGui::TextWrapped("%s", trf("about.version", NX_VERSION_STRING).c_str());
     ImGui::Dummy(ImVec2(0, 6 * g_scale));
@@ -1685,6 +1726,11 @@ bool settings_draw(float scale, ImFont* title, float opening) {
         case 4: page_saves(); break;
         case 5: page_online(); break;
         case 6: settings_page_amiibo(g_scale); break;
+#if defined(__ANDROID__)
+        case 8: page_vr_screen(); break;
+        case 9: page_camera_trace(); break;
+#endif
+        case 7: page_about(); break;
         default: page_about(); break;
     }
     g_page_navigation = false;

@@ -1100,9 +1100,16 @@ static void pgo_writer(void*) {
 }
 #endif
 
+bool xr_android_initialize(android_app* app);
+bool xr_android_poll_events();
+
 extern "C" void android_main(android_app* app) {
     using namespace nx::plat;
     g_app = app;
+    // Initialize the Khronos Android loader before any OpenXR instance enumeration/creation.
+    // The flat-screen Android path remains available if this device has no OpenXR runtime.
+    const bool xr_available = xr_android_initialize(app);
+    (void)xr_available;
     // Game data: Internal storage/<game title> (put there by the player, needs all-files access) or the app's own
     // external files folder (adb push).
     // The folder picked on the home screen (games/<game>/java Home.java writes <files>/data_root.txt) comes first.
@@ -1206,6 +1213,8 @@ extern "C" void android_main(android_app* app) {
             if (src) src->process(app, src);
             if (app->destroyRequested) nx::log_flush(), _exit(0);
         }
+        // OpenXR session transitions (READY/STOPPING/EXITING) are independent of the game render thread.
+        xr_android_poll_events();
         if (!started && g_window) {
             started = true;
 #ifdef NX_PGO_GENERATE

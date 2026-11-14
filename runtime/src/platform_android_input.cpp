@@ -46,6 +46,9 @@
 #include "touch_layout.h"
 #include "ui/ui.h"
 
+bool xr_android_is_available();
+void xr_android_get_tracking(float*,float*,float*,float*,float*,float*,float*,float*,float*,bool*,uint64_t*,bool*);
+
 // Android input: game controllers and touch (split from platform_android.cpp).
 namespace nx::plat {
 
@@ -67,6 +70,10 @@ std::vector<Touch> g_touches;
 float g_w = 1, g_h = 1;
 bool g_gamepad = false;  // the last input came from a controller: the drawn touch controls hide
 bool g_pad_connected = false;  // a controller is connected (platform_android.cpp polls the system's input devices)
+float g_xr_head_position[3]{}, g_xr_head_orientation[4]{0,0,0,1};
+bool g_xr_head_valid = false;
+float g_xr_hand_position[2][3]{}, g_xr_hand_orientation[2][4]={{0,0,0,1},{0,0,0,1}};
+bool g_xr_hand_valid[2]{};
 
 uint64_t key_to_button(int32_t k) {
     switch (k) {
@@ -197,15 +204,75 @@ bool headless() {  // NX_HEADLESS (platform.h)
 
 bool read_player_pad(int, PadState&) { return false; }  // player 1 only on this host
 
+bool read_xr_head_pose(float* position, float* orientation) {
+    std::lock_guard lk(g_in);
+    if (!g_xr_head_valid) return false;
+    if (position) std::copy(g_xr_head_position, g_xr_head_position + 3, position);
+    if (orientation) std::copy(g_xr_head_orientation, g_xr_head_orientation + 4, orientation);
+    return true;
+}
+
+bool read_xr_controller_pose(int hand, float* position, float* orientation) {
+    if (hand < 0 || hand > 1) return false;
+    std::lock_guard lk(g_in);
+    if (!g_xr_hand_valid[hand]) return false;
+    if (position) std::copy(g_xr_hand_position[hand], g_xr_hand_position[hand] + 3, position);
+    if (orientation) std::copy(g_xr_hand_orientation[hand], g_xr_hand_orientation[hand] + 4, orientation);
+    return true;
+}
+
 void read_pad(PadState& p) {
     std::lock_guard lk(g_in);
-    p.buttons |= g_pad_buttons.buttons;
+    PadState xr_pad;
+    bool xr_left_active = false, xr_right_active = false;
+    if (xr_android_is_available()) {
+        float hp[3]{}, hr[4]{}, lp[3]{}, lr[4]{}, rp[3]{}, rr[4]{};
+        float triggers[2]{}, grips[2]{}, sticks[4]{};
+        bool active[2]{}, head_valid = false;
+        uint64_t buttons[2]{};
+        xr_android_get_tracking(hp,hr,lp,lr,rp,rr,triggers,grips,sticks,active,buttons,&head_valid);
+        g_xr_head_valid = head_valid;
+        std::copy(hp, hp + 3, g_xr_head_position);
+        std::copy(hr, hr + 4, g_xr_head_orientation);
+        std::copy(lp, lp + 3, g_xr_hand_position[0]);
+        std::copy(lr, lr + 4, g_xr_hand_orientation[0]);
+        std::copy(rp, rp + 3, g_xr_hand_position[1]);
+        std::copy(rr, rr + 4, g_xr_hand_orientation[1]);
+        g_xr_hand_valid[0] = active[0]; g_xr_hand_valid[1] = active[1];
+        if (active[0] || active[1]) {
+            g_gamepad = g_pad_connected = true;
+            xr_left_active = active[0];
+            xr_right_active = active[1];
+            if (active[0]) {
+                xr_pad.lx = int32_t(std::clamp(sticks[0], -1.f, 1.f) * kStickMax);
+                xr_pad.ly = int32_t(std::clamp(sticks[1], -1.f, 1.f) * kStickMax);
+                if (triggers[0] > 0.55f) xr_pad.buttons |= kZL; else xr_pad.buttons &= ~kZL;
+                if (grips[0] > 0.55f) xr_pad.buttons |= kL; else xr_pad.buttons &= ~kL;
+                if (buttons[0] & (1ull<<2)) xr_pad.buttons |= kX; else xr_pad.buttons &= ~kX;
+                if (buttons[0] & (1ull<<3)) xr_pad.buttons |= kY; else xr_pad.buttons &= ~kY;
+                if (buttons[0] & (1ull<<4)) xr_pad.buttons |= kSettingsButton; else xr_pad.buttons &= ~kSettingsButton;
+                if (buttons[0] & (1ull<<5)) xr_pad.buttons |= kMinus; else xr_pad.buttons &= ~kMinus;
+            }
+            if (active[1]) {
+                xr_pad.rx = int32_t(std::clamp(sticks[2], -1.f, 1.f) * kStickMax);
+                xr_pad.ry = int32_t(std::clamp(sticks[3], -1.f, 1.f) * kStickMax);
+                if (triggers[1] > 0.55f) xr_pad.buttons |= kZR; else xr_pad.buttons &= ~kZR;
+                if (grips[1] > 0.55f) xr_pad.buttons |= kR; else xr_pad.buttons &= ~kR;
+                if (buttons[1] & (1ull<<0)) xr_pad.buttons |= kA; else xr_pad.buttons &= ~kA;
+                if (buttons[1] & (1ull<<1)) xr_pad.buttons |= kB; else xr_pad.buttons &= ~kB;
+                if (buttons[1] & (1ull<<5)) xr_pad.buttons |= kPlus; else xr_pad.buttons &= ~kPlus;
+            }
+        }
+    }
+    p.buttons |= g_pad_buttons.buttons | xr_pad.buttons;
     if (g_pad_buttons.lx || g_pad_buttons.ly) {
         p.lx = g_pad_buttons.lx;
         p.ly = g_pad_buttons.ly;
     }
     p.rx = g_pad_buttons.rx;
     p.ry = g_pad_buttons.ry;
+    if (xr_left_active) { p.lx = xr_pad.lx; p.ly = xr_pad.ly; }
+    if (xr_right_active) { p.rx = xr_pad.rx; p.ry = xr_pad.ry; }
     float radius = std::max(1.f, g_h * 0.12f);
     size_t drawn = 0;
     touch_buttons(drawn, g_w / g_h);

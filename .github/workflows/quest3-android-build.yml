@@ -1,0 +1,85 @@
+name: Quest 3 Android ARM64 build
+
+on:
+  push:
+    branches: [quest3-openxr-integration]
+  pull_request:
+    branches: [main]
+    paths:
+      - "CMakeLists.txt"
+      - "runtime/**"
+      - "tools/build_android.sh"
+      - "android/**"
+      - ".github/workflows/quest3-android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    name: Build Quest-compatible ARM64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build zip unzip python3
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        run: |
+          # GitHub's Ubuntu image already includes the Android command-line tools.
+          # setup-android@v3 tries to install the obsolete "tools" SDK package,
+          # which no longer exists and causes the job to fail before compilation.
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          test -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" || \
+            test -x "$SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Install Android NDK and packaging tools
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+
+      - name: Fetch Vulkan headers
+        run: |
+          mkdir -p private/third_party
+          curl -fsSL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.357.tar.gz" |
+            tar -xz -C private/third_party
+
+      - name: Configure, compile, and package ARM64 APK
+        run: tools/build_android.sh --quest3 --no-game --jobs 2
+
+      - name: Verify APK architecture and OpenXR loader
+        run: |
+          APK=private/acnh/apk-quest3-app/acnh-vr.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -E "lib/arm64-v8a/libacnh.so"
+          unzip -l "$APK" | grep -E "lib/arm64-v8a/libopenxr_loader.so"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='io.github.acnhrecomp.quest3'"
+          echo "ARM64 APK packaging verification passed."
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: acnh-vr-quest3-arm64-apk
+          path: private/acnh/apk-quest3-app/acnh-vr.apk
+          if-no-files-found: error
+          retention-days: 14

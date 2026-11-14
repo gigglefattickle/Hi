@@ -1,11 +1,9 @@
-// The app's first screen: asks for the game folder, checks it and starts the game (android.app.NativeActivity,
-// lib<game>.so). The APK holds no game: the folder is the one the player's computer prepared from their own copy
-// (tools/android_install.sh: the recompiled code as libacnh_game.so, romfs.pak, spirv.pak, ...; docs/ANDROID.md).
-// The folder chosen is kept in <files>/data_root.txt, which platform_android.cpp reads; next time the game starts
-// right away. The launcher icon's shortcut "Change game folder" (res/xml/shortcuts.xml) asks again.
+// Quest launcher entry point. Keeps the game-folder picker, but always shows Play / Settings / Save Manager
+// before entering NativeActivity. Save backups use Android's Storage Access Framework (no extra permissions).
 package io.github.acnhrecomp;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -23,270 +21,451 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 public class Home extends Activity {
-    static {
-        System.loadLibrary("acnh");
-    }
-
-    // platform_android.cpp: "" when the game library in `folder` loads (copied into `files` first), else why not.
+    static { System.loadLibrary("acnh"); }
     private static native String nativeLoadGame(String folder, String files);
 
-    private static final int PICK = 1;
+    private static final int PICK = 1, EXPORT_SAVE = 2, IMPORT_SAVE = 3, EXPORT_TRACE = 4;
     private static final String GAME_LIB = "libacnh_game.so";
-
     private final boolean pt = Locale.getDefault().getLanguage().equals("pt");
     private LinearLayout box;
     private TextView message;
-    private String waitingForAccess;  // a folder picked before the all-files permission was given
+    private String waitingForAccess;
     private boolean busy;
 
     private String t(String en, String ptBr) { return pt ? ptBr : en; }
 
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         String error = getIntent().getStringExtra("error");
         boolean ask = getIntent().getBooleanExtra("pick", false) || error != null;
-        String saved = ask ? "" : readSaved();
-        if (!saved.isEmpty() && hasPackage(new File(saved)) && canRead(saved)) {
-            check(saved, true);  // the folder of last time: straight into the game
-            return;
-        }
-        show(error != null ? explain(error) : null);
-        if (!ask && found().isEmpty()) pick();
+        showLauncher(error != null ? explain(error) : null, ask);
+        if (!ask && readSaved().isEmpty() && found().isEmpty()) pick();
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
         if (waitingForAccess != null && Environment.isExternalStorageManager()) {
-            String f = waitingForAccess;
-            waitingForAccess = null;
-            check(f, false);
+            String f = waitingForAccess; waitingForAccess = null; check(f, false);
         }
     }
-
-    // ---- the screen -------------------------------------------------------------------------------------------
 
     private int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
-    private Button button(String text, int color, View.OnClickListener click) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        b.setTextSize(17);
-        b.setTextColor(color == Color.WHITE ? Color.rgb(92, 70, 50) : Color.WHITE);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(color);
-        bg.setCornerRadius(dp(26));
-        b.setBackground(bg);
-        b.setPadding(dp(22), dp(10), dp(22), dp(10));
+    private Button button(String label, int color, View.OnClickListener click) {
+        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setTextSize(17);
+        b.setTextColor(color == Color.WHITE ? Color.rgb(92,70,50) : Color.WHITE);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(18));
+        b.setBackground(bg); b.setPadding(dp(22),dp(10),dp(22),dp(10)); b.setMinHeight(dp(54));
         b.setOnClickListener(click);
-        b.setMinHeight(dp(54));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(10);
-        b.setLayoutParams(lp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); b.setLayoutParams(lp);
         return b;
     }
 
-    private void show(String note) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        GradientDrawable sky = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[] {Color.rgb(160, 222, 200), Color.rgb(196, 230, 160)});
-        scroll.setBackground(sky);
-        LinearLayout outer = new LinearLayout(this);
-        outer.setGravity(Gravity.CENTER);
-        outer.setPadding(dp(24), dp(24), dp(24), dp(24));
-        box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(28), dp(24), dp(28), dp(24));
-        GradientDrawable paper = new GradientDrawable();
-        paper.setColor(Color.rgb(255, 250, 232));
-        paper.setCornerRadius(dp(28));
+    private void base(String titleText, String subtitle, String note) {
+        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
+        scroll.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(160,222,200),Color.rgb(196,230,160)}));
+        LinearLayout outer = new LinearLayout(this); outer.setGravity(Gravity.CENTER);
+        outer.setPadding(dp(24),dp(24),dp(24),dp(24));
+        box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(30),dp(26),dp(30),dp(26));
+        GradientDrawable paper = new GradientDrawable(); paper.setColor(Color.rgb(255,250,232)); paper.setCornerRadius(dp(28));
         box.setBackground(paper);
-        outer.addView(box, new LinearLayout.LayoutParams(Math.min(dp(560), getResources().getDisplayMetrics().widthPixels - dp(48)),
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        outer.addView(box,new LinearLayout.LayoutParams(Math.min(dp(680),getResources().getDisplayMetrics().widthPixels-dp(48)),-2));
         scroll.addView(outer);
-
-        TextView title = new TextView(this);
-        title.setText("ACNH Recomp");
-        title.setTextSize(26);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Color.rgb(92, 70, 50));
-        box.addView(title);
-        TextView text = new TextView(this);
-        text.setText(t("Choose the game folder: the one your computer prepared from your own copy of the game "
-                        + "(with libacnh_game.so, romfs.pak and spirv.pak inside).",
-                "Escolha a pasta do jogo: a que o seu computador preparou a partir da sua cópia do jogo "
-                        + "(com libacnh_game.so, romfs.pak e spirv.pak dentro)."));
-        text.setTextSize(16);
-        text.setTextColor(Color.rgb(120, 100, 80));
-        text.setPadding(0, dp(8), 0, dp(8));
-        box.addView(text);
-        message = new TextView(this);
-        message.setTextSize(15);
-        message.setTextColor(Color.rgb(190, 80, 80));
-        message.setVisibility(note == null ? View.GONE : View.VISIBLE);
-        if (note != null) message.setText(note);
-        box.addView(message);
-
-        for (final String f : found())
-            box.addView(button(t("Use the game found", "Usar o jogo encontrado") + " ("
-                            + (f.startsWith("/storage/emulated") ? t("phone", "celular") : t("memory card", "cartão de memória"))
-                            + ")", Color.rgb(90, 170, 90), v -> check(f, false)));
-        box.addView(button(t("Choose the game folder", "Escolher a pasta do jogo"), Color.rgb(70, 140, 210), v -> pick()));
+        LinearLayout header = new LinearLayout(this); header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL); box.addView(header);
+        TextView title = new TextView(this); title.setText(titleText); title.setTextSize(27);
+        title.setTypeface(Typeface.DEFAULT_BOLD); title.setTextColor(Color.rgb(92,70,50));
+        header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        TextView gear = new TextView(this); gear.setText("⚙"); gear.setTextSize(25);
+        gear.setTextColor(Color.rgb(92,70,50)); gear.setGravity(Gravity.CENTER);
+        GradientDrawable gearBg = new GradientDrawable(); gearBg.setColor(Color.rgb(232,241,213)); gearBg.setCornerRadius(dp(18));
+        gear.setBackground(gearBg); gear.setPadding(dp(13),dp(7),dp(13),dp(7));
+        gear.setContentDescription(t("Settings","Configurações")); gear.setOnClickListener(v -> showSettings());
+        header.addView(gear,new LinearLayout.LayoutParams(-2,-2));
+        TextView desc = new TextView(this); desc.setText(subtitle); desc.setTextSize(16);
+        desc.setTextColor(Color.rgb(120,100,80)); desc.setPadding(0,dp(8),0,dp(8)); box.addView(desc);
+        message = new TextView(this); message.setTextSize(15); message.setTextColor(Color.rgb(190,80,80));
+        message.setVisibility(note == null ? View.GONE : View.VISIBLE); if(note!=null) message.setText(note); box.addView(message);
         setContentView(scroll);
     }
 
+    private void showLauncher(String note, boolean forcePick) {
+        String saved = forcePick ? "" : readSaved();
+        boolean valid = !saved.isEmpty() && hasPackage(new File(saved)) && canRead(saved);
+        base(t("Animal Crossing VR","Animal Crossing VR"), t("Your game launcher","Seu inicializador"),
+                note != null ? note : (valid ? t("Game folder ready.","Pasta do jogo pronta.")
+                        : t("Choose your prepared game folder to get started.","Escolha a pasta preparada do jogo para começar.")));
+        if (valid) box.addView(button(t("Play","Jogar"),Color.rgb(90,170,90),v -> check(saved,false)));
+        else box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
+        box.addView(button(t("Save Manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
+        box.addView(button(t("📷 Camera Trace","📷 Registro da câmera"),Color.rgb(80,145,175),v -> showCameraTrace()));
+        if (valid) box.addView(button(t("Change game folder","Trocar pasta do jogo"),Color.rgb(150,130,110),v -> pick()));
+        for (final String f : found()) if (!valid || !f.equals(saved))
+            box.addView(button(t("Use detected game folder","Usar pasta detectada"),Color.rgb(90,170,90),v -> check(f,false)));
+    }
+
+    private void showCameraTrace() {
+        File trace = new File(readSaved(), "xr-camera-trace.txt");
+        base(t("Camera Trace","Registro da câmera"),
+                t("Export the Quest 3 camera diagnostic log so it can be shared here.",
+                  "Exporte o registro de diagnóstico da câmera do Quest 3 para compartilhá-lo aqui."),
+                trace.isFile() ? t("Trace file found · ","Arquivo encontrado · ")+trace.length()+" bytes"
+                               : t("No trace file yet. Enable Camera Trace in in-game Settings, restart the game, and reproduce the issue.",
+                                   "Nenhum registro ainda. Ative Camera Trace nas configurações do jogo, reinicie e reproduza o problema."));
+        box.addView(button(t("Export Camera Trace","Exportar registro"),Color.rgb(80,145,175),v -> {
+            if (!trace.isFile()) { say(t("No trace file found yet.","Nenhum registro encontrado ainda."),true); return; }
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE,"xr-camera-trace.txt");
+            startActivityForResult(i,EXPORT_TRACE);
+        }));
+        box.addView(button(t("Back to Launcher","Voltar ao inicializador"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+    }
+
+    private void settingsSection(String label) {
+        TextView heading = new TextView(this);
+        heading.setText(label.toUpperCase(Locale.ROOT));
+        heading.setTextSize(12);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.setLetterSpacing(0.08f);
+        heading.setTextColor(Color.rgb(105,125,105));
+        heading.setPadding(dp(4),dp(18),dp(4),dp(2));
+        box.addView(heading);
+    }
+
+    private void settingsInfo(String title, String detail, int accent) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16),dp(13),dp(16),dp(13));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(245,244,226));
+        bg.setCornerRadius(dp(16));
+        bg.setStroke(dp(1),Color.rgb(225,224,202));
+        card.setBackground(bg);
+        TextView name = new TextView(this);
+        name.setText(title); name.setTextSize(16); name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setTextColor(accent); card.addView(name);
+        TextView description = new TextView(this);
+        description.setText(detail); description.setTextSize(13);
+        description.setTextColor(Color.rgb(115,105,88));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2);
+        p.topMargin=dp(4); card.addView(description,p);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1,-2);
+        cp.topMargin=dp(8); box.addView(card,cp);
+    }
+
+    private void showSettings() {
+        base(t("Settings","Configurações"),t("Manage your game, display and headset options.","Gerencie o jogo, a imagem e as opções do headset."),null);
+        String folder = readSaved();
+        boolean ready = !folder.isEmpty() && hasPackage(new File(folder));
+        settingsSection(t("GAME","JOGO"));
+        settingsInfo(t("Game folder","Pasta do jogo"),
+                ready ? folder : t("No prepared game folder selected.","Nenhuma pasta de jogo preparada selecionada."),
+                Color.rgb(92,105,78));
+        box.addView(button(t("Choose / change game folder","Escolher / trocar pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
+        settingsSection(t("DISPLAY","IMAGEM"));
+        box.addView(button(t("Video settings","Configurações de vídeo"),Color.rgb(70,155,135),v -> showGraphics()));
+        settingsSection(t("HEADSET","HEADSET"));
+        box.addView(button(t("VR status & controls","Estado e controles VR"),Color.rgb(105,135,175),v -> showVrSettings()));
+        settingsSection(t("APP","APLICATIVO"));
+        box.addView(button(t("Save manager","Gerenciador de saves"),Color.rgb(190,145,75),v -> showSaveManager()));
+        box.addView(button(t("Back to launcher","Voltar ao inicializador"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+    }
+
+    private void showVrSettings() {
+        base(t("VR Status","Estado VR"),
+                t("Quest 3 headset tracking and game-camera support.","Rastreamento do Quest 3 e suporte à câmera do jogo."),null);
+        settingsSection(t("CURRENT DISPLAY MODE","MODO DE IMAGEM ATUAL"));
+        settingsInfo(t("Flat mirrored image","Imagem plana espelhada"),
+                t("The same 2D game frame is currently sent to both eyes. This is not true stereoscopic 3D.",
+                  "O mesmo quadro 2D do jogo é enviado aos dois olhos. Isso não é 3D estereoscópico real."),
+                Color.rgb(165,105,65));
+        settingsSection(t("NOT IMPLEMENTED YET","AINDA NÃO IMPLEMENTADO"));
+        settingsInfo(t("True stereoscopic world rendering","Renderização estereoscópica real"),
+                t("The game scene must be rendered separately for the left and right eyes with correct camera projection.",
+                  "A cena precisa ser renderizada separadamente para o olho esquerdo e direito, com projeção de câmera correta."),
+                Color.rgb(105,125,155));
+        settingsInfo(t("First-person head look","Visão em primeira pessoa com movimento da cabeça"),
+                t("Head pose is tracked by OpenXR, but it is not connected to the game's world camera yet. There is no working toggle for this feature right now.",
+                  "A posição da cabeça é rastreada pelo OpenXR, mas ainda não está conectada à câmera do mundo do jogo. No momento, não há um botão funcional para esse recurso."),
+                Color.rgb(105,125,155));
+        settingsSection(t("AVAILABLE","DISPONÍVEL"));
+        settingsInfo(t("OpenXR headset and controller tracking","Rastreamento OpenXR do headset e controles"),
+                t("Headset and Touch controller poses are received by the runtime; camera and hand-model integration remains in progress.",
+                  "O runtime recebe as posições do headset e dos controles Touch; a integração da câmera e dos modelos das mãos ainda está em desenvolvimento."),
+                Color.rgb(75,135,100));
+        box.addView(button(t("Back to Settings","Voltar às configurações"),Color.rgb(150,130,110),v -> showSettings()));
+    }
+
+    private String graphicsValue(String key, String fallback) {
+        String folder = readSaved();
+        if (folder.isEmpty()) return fallback;
+        File ini = new File(folder, "config.ini");
+        try {
+            String section = "";
+            for (String line : Files.readAllLines(ini.toPath(), StandardCharsets.UTF_8)) {
+                String s = line.trim();
+                if (s.isEmpty() || s.startsWith("#") || s.startsWith(";")) continue;
+                if (s.startsWith("[") && s.endsWith("]")) { section = s.substring(1, s.length()-1).trim(); continue; }
+                int eq = s.indexOf('=');
+                if (eq < 0) continue;
+                String full = section.isEmpty() ? s.substring(0,eq).trim() : section+"."+s.substring(0,eq).trim();
+                if (full.equals(key)) return s.substring(eq+1).trim();
+            }
+        } catch (Exception ignored) {}
+        return fallback;
+    }
+
+    private boolean writeGraphics(java.util.Map<String,String> changes) {
+        String folder = readSaved();
+        if (folder.isEmpty()) return false;
+        File ini = new File(folder, "config.ini");
+        try {
+            List<String> lines = ini.isFile() ? Files.readAllLines(ini.toPath(), StandardCharsets.UTF_8) : new ArrayList<>();
+            java.util.Set<String> written = new java.util.HashSet<>();
+            String section = "";
+            List<String> out = new ArrayList<>();
+            for (String line : lines) {
+                String s = line.trim();
+                if (s.startsWith("[") && s.endsWith("]")) section = s.substring(1,s.length()-1).trim();
+                int eq = s.indexOf('=');
+                if (eq >= 0 && !s.startsWith("#") && !s.startsWith(";")) {
+                    String key = section.isEmpty() ? s.substring(0,eq).trim() : section+"."+s.substring(0,eq).trim();
+                    if (changes.containsKey(key)) {
+                        out.add(line.substring(0, line.indexOf('=')+1) + " " + changes.get(key));
+                        written.add(key);
+                        continue;
+                    }
+                }
+                out.add(line);
+            }
+            for (java.util.Map.Entry<String,String> e : changes.entrySet()) if (!written.contains(e.getKey())) {
+                String key=e.getKey(); int dot=key.indexOf('.');
+                String wanted=key.substring(0,dot), local=key.substring(dot+1);
+                boolean hasSection=false;
+                for (String line:out) if (line.trim().equals("["+wanted+"]")) {hasSection=true;break;}
+                if (!hasSection) { if (!out.isEmpty() && !out.get(out.size()-1).isEmpty()) out.add(""); out.add("["+wanted+"]"); }
+                int start=-1; for(int i=0;i<out.size();i++) if(out.get(i).trim().equals("["+wanted+"]")){start=i+1;break;}
+                int end=out.size(); for(int i=start;i<out.size();i++) if(out.get(i).trim().startsWith("[")&&out.get(i).trim().endsWith("]")){end=i;break;}
+                out.add(end,local+" = "+e.getValue());
+            }
+            Files.write(ini.toPath(),out,StandardCharsets.UTF_8);
+            return true;
+        } catch(Exception e) { return false; }
+    }
+
+    private void setGraphic(String key, String value) {
+        java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+        changes.put(key,value);
+        if (!writeGraphics(changes)) { say(t("Select a readable game folder before changing graphics settings.","Escolha uma pasta de jogo acessível antes de alterar os gráficos."),true); return; }
+        showGraphics();
+        say(t("Graphics setting saved. Restart the game to apply it.","Configuração gráfica salva. Reinicie o jogo para aplicar."),false);
+    }
+
+    private void setGraphicsPreset(String preset) {
+        java.util.Map<String,String> changes=new java.util.LinkedHashMap<>();
+        changes.put("video.preset",preset);
+        if ("quality".equals(preset)) {
+            changes.put("video.mode","docked"); changes.put("video.resolution","native"); changes.put("video.upscaler","linear"); changes.put("audio.reverb","1");
+        } else if ("balanced".equals(preset)) {
+            changes.put("video.mode","handheld"); changes.put("video.resolution","native"); changes.put("video.upscaler","fsr"); changes.put("audio.reverb","1");
+        } else {
+            changes.put("video.mode","docked"); changes.put("video.resolution","540"); changes.put("video.upscaler","fsr"); changes.put("video.frame_gen","off"); changes.put("audio.reverb","0");
+        }
+        if (!writeGraphics(changes)) { say(t("Select a readable game folder before changing graphics settings.","Escolha uma pasta de jogo acessível antes de alterar os gráficos."),true); return; }
+        showGraphics();
+        say(t("Graphics preset saved. Restart the game to apply it.","Predefinição gráfica salva. Reinicie o jogo para aplicar."),false);
+    }
+
+    private void showGraphics() {
+        base(t("Video Settings","Configurações de vídeo"),
+                t("Adjust image quality and performance for the Quest 3. Changes are saved to the game folder's config.ini.","Ajuste qualidade e desempenho para o Quest 3. As alterações são salvas em config.ini."),null);
+        if (readSaved().isEmpty() || !hasPackage(new File(readSaved()))) {
+            say(t("Choose a game folder first.","Escolha uma pasta do jogo primeiro."),true);
+            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showSettings()));
+            return;
+        }
+        String preset=graphicsValue("video.preset","custom");
+        box.addView(button(t("Quality preset","Predefinição Qualidade")+(preset.equals("quality")?" ✓":""),Color.rgb(75,145,105),v -> setGraphicsPreset("quality")));
+        box.addView(button(t("Balanced preset","Predefinição Equilibrada")+(preset.equals("balanced")?" ✓":""),Color.rgb(80,145,175),v -> setGraphicsPreset("balanced")));
+        box.addView(button(t("Performance preset","Predefinição Desempenho")+(preset.equals("low")?" ✓":""),Color.rgb(180,135,65),v -> setGraphicsPreset("low")));
+        box.addView(button(t("Resolution: ","Resolução: ")+graphicsValue("video.resolution","auto")+"  ·  "+t("Next","Próxima"),Color.rgb(110,145,190),v -> {
+            String[] opts={"auto","native","720","900","1080","540"}; String cur=graphicsValue("video.resolution","auto"); int n=0;
+            for(int i=0;i<opts.length;i++)if(opts[i].equals(cur)){n=(i+1)%opts.length;break;} setGraphic("video.resolution",opts[n]);
+        }));
+        box.addView(button(t("Upscaling: ","Escalonamento: ")+graphicsValue("video.upscaler","linear")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.upscaler",graphicsValue("video.upscaler","linear").equals("fsr")?"linear":"fsr")));
+        box.addView(button(t("Anti-aliasing: ","Antisserrilhamento: ")+graphicsValue("video.antialiasing","off")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.antialiasing",graphicsValue("video.antialiasing","off").equals("fxaa")?"off":"fxaa")));
+        box.addView(button(t("FPS counter: ","Contador FPS: ")+graphicsValue("video.show_fps","0")+"  ·  "+t("Toggle","Alternar"),Color.rgb(110,145,190),v -> setGraphic("video.show_fps",graphicsValue("video.show_fps","0").equals("1")?"0":"1")));
+        box.addView(button(t("Back to Settings","Voltar às configurações"),Color.rgb(150,130,110),v -> showSettings()));
+    }
+
+    private void showSaveManager() {
+        base(t("Save Manager","Gerenciador de saves"),
+                t("Export a backup before reinstalling the app. Import replaces the current device save.","Exporte um backup antes de reinstalar o app. Importar substitui o save atual."),null);
+        String dataRoot = readSaved();
+        if (dataRoot.isEmpty() || !hasPackage(new File(dataRoot))) {
+            TextView missing = new TextView(this);
+            missing.setText(t("Select your game folder first. Save Manager will be available after the game folder is configured.",
+                    "Escolha a pasta do jogo primeiro. O gerenciador de saves ficará disponível depois."));
+            missing.setTextSize(15); missing.setTextColor(Color.rgb(100,85,70)); missing.setPadding(0,dp(12),0,dp(8));
+            box.addView(missing);
+            box.addView(button(t("Choose game folder","Escolher pasta do jogo"),Color.rgb(70,140,210),v -> pick()));
+            box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+            return;
+        }
+        File save = activeSave();
+        TextView status = new TextView(this);
+        status.setText(t("Save folder: ","Pasta do save: ")+save.getAbsolutePath()+"\n"+
+                (save.isDirectory()?t("Save data found","Dados de save encontrados"):t("No save folder yet","Ainda não existe pasta de save")));
+        status.setTextSize(13); status.setTextColor(Color.rgb(100,85,70)); status.setPadding(0,dp(10),0,dp(8)); box.addView(status);
+        box.addView(button(t("Export Save","Exportar save"),Color.rgb(90,170,90),v -> {
+            if (!save.isDirectory()) { say(t("No save data exists to export yet.","Ainda não há dados de save para exportar."),true); return; }
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/zip"); i.putExtra(Intent.EXTRA_TITLE,"ACNH-VR-save-backup.zip"); startActivityForResult(i,EXPORT_SAVE);
+        }));
+        box.addView(button(t("Load Save","Carregar save"),Color.rgb(190,145,75),v -> {
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/zip"); startActivityForResult(i,IMPORT_SAVE);
+        }));
+        box.addView(button(t("Back","Voltar"),Color.rgb(150,130,110),v -> showLauncher(null,false)));
+    }
+
     private void say(String text, boolean error) {
-        if (message == null) return;
-        message.setTextColor(error ? Color.rgb(190, 80, 80) : Color.rgb(70, 140, 60));
-        message.setText(text);
-        message.setVisibility(View.VISIBLE);
+        if(message!=null){message.setTextColor(error?Color.rgb(190,80,80):Color.rgb(70,100,60));message.setText(text);message.setVisibility(View.VISIBLE);}
     }
 
     private String explain(String why) {
-        if (why.startsWith("abi"))
-            return t("The game in this folder was prepared for another version of the app. Prepare it again on the "
-                            + "computer (tools/android_install.sh) or install the matching app.",
-                    "O jogo desta pasta foi preparado para outra versão do app. Prepare de novo no computador "
-                            + "(tools/android_install.sh) ou instale o app da mesma versão.");
-        if (why.startsWith("missing"))
-            return t("This folder has no prepared game (" + GAME_LIB + "). Prepare your game with ACNHRecomp-Importer "
-                            + "(download it on our Discord: discord.gg/VJW9Dtdu7a), then on the computer with "
-                            + "tools/android_install.sh.",
-                    "Esta pasta não tem o jogo preparado (" + GAME_LIB + "). Prepare o seu jogo com o "
-                            + "ACNHRecomp-Importer (baixe no nosso Discord: discord.gg/VJW9Dtdu7a) e depois no "
-                            + "computador com tools/android_install.sh.");
-        if (why.equals("restart"))
-            return t("Close the app and open it again to use another folder.",
-                    "Feche o app e abra de novo para usar outra pasta.");
+        if(why.startsWith("abi")) return t("The game in this folder was prepared for another app version. Prepare it again on the computer.","O jogo foi preparado para outra versão do app. Prepare novamente no computador.");
+        if(why.startsWith("missing")) return t("This folder has no prepared game ("+GAME_LIB+"). Prepare it with ACNHRecomp-Importer and tools/android_install.sh.","Esta pasta não contém o jogo preparado ("+GAME_LIB+").");
+        if(why.equals("restart")) return t("Close and reopen the app to use another folder.","Feche e abra o app novamente para usar outra pasta.");
         return why;
     }
 
-    // ---- folders ----------------------------------------------------------------------------------------------
-
     private static boolean hasPackage(File f) {
-        // the game folder ACNHRecomp-Importer prepares (game/android-arm64/), or one tools/android_install.sh filled
-        return (new File(f, "game/android-arm64/" + GAME_LIB).isFile() || new File(f, GAME_LIB).isFile())
-                && new File(f, "analysis/main.bin").isFile();
+        return (new File(f,"game/android-arm64/"+GAME_LIB).isFile() || new File(f,GAME_LIB).isFile())
+                && new File(f,"analysis/main.bin").isFile();
     }
-
-    // The app's own folders (phone and memory card) where tools/android_install.sh puts the game: readable without
-    // any permission, and not offered by the system's folder picker.
     private List<String> found() {
-        List<String> out = new ArrayList<>();
-        for (File f : getExternalFilesDirs(null))
-            if (f != null && hasPackage(f)) out.add(f.getAbsolutePath());
+        List<String> out=new ArrayList<>();
+        for(File f:getExternalFilesDirs(null)) if(f!=null&&hasPackage(f)) out.add(f.getAbsolutePath());
         return out;
     }
-
     private boolean ownFolder(String path) {
-        for (File f : getExternalFilesDirs(null))
-            if (f != null && path.startsWith(f.getAbsolutePath())) return true;
+        for(File f:getExternalFilesDirs(null)) if(f!=null&&path.startsWith(f.getAbsolutePath())) return true;
         return false;
     }
-
-    private boolean canRead(String path) { return ownFolder(path) || Environment.isExternalStorageManager(); }
-
+    private boolean canRead(String path) { return ownFolder(path)||Environment.isExternalStorageManager(); }
     private String readSaved() {
-        try {
-            return new String(Files.readAllBytes(new File(getFilesDir(), "data_root.txt").toPath()),
-                    StandardCharsets.UTF_8).trim();
-        } catch (Exception e) {
-            return "";
-        }
+        try{return new String(Files.readAllBytes(new File(getFilesDir(),"data_root.txt").toPath()),StandardCharsets.UTF_8).trim();}
+        catch(Exception e){return "";}
     }
+    private File activeSave() { String root=readSaved(); return new File(new File(root,"user"),"device_save"); }
 
     private void pick() {
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        try {
-            startActivityForResult(i, PICK);
-        } catch (Exception e) {
-            say(t("This phone has no folder picker.", "Este celular não tem seletor de pastas."), true);
-        }
+        try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),PICK);}
+        catch(Exception e){say(t("This device has no folder picker.","Não há seletor de pastas neste dispositivo."),true);}
     }
-
-    // A folder from the system picker as a path: "primary:Games/ACNH" is the phone's storage, "7EFF-EC74:ACNH" a
-    // memory card (/storage/7EFF-EC74).
     private static String pathOf(Uri tree) {
-        String id = DocumentsContract.getTreeDocumentId(tree);
-        int colon = id.indexOf(':');
-        String volume = colon < 0 ? id : id.substring(0, colon), rest = colon < 0 ? "" : id.substring(colon + 1);
-        String base = volume.equals("primary") ? Environment.getExternalStorageDirectory().getAbsolutePath()
-                                               : "/storage/" + volume;
-        return rest.isEmpty() ? base : base + "/" + rest;
+        String id=DocumentsContract.getTreeDocumentId(tree); int colon=id.indexOf(':');
+        String volume=colon<0?id:id.substring(0,colon), rest=colon<0?"":id.substring(colon+1);
+        String base=volume.equals("primary")?Environment.getExternalStorageDirectory().getAbsolutePath():"/storage/"+volume;
+        return rest.isEmpty()?base:base+"/"+rest;
     }
 
-    @Override
-    protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request, result, data);
-        if (request != PICK || result != RESULT_OK || data == null || data.getData() == null) return;
-        String path = pathOf(data.getData());
-        if (message == null) show(null);
-        if (!canRead(path)) {
-            // Reading the game's files from a folder of the phone's storage needs the all-files permission.
-            waitingForAccess = path;
-            say(t("Allow access to all files for ACNH Recomp, then come back.",
-                    "Permita o acesso a todos os arquivos para o ACNH Recomp e volte."), false);
-            Intent i = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-            return;
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        super.onActivityResult(request,result,data);
+        if(result!=RESULT_OK||data==null||data.getData()==null)return;
+        Uri uri=data.getData();
+        if(request==PICK) {
+            String path=pathOf(uri);
+            if(!canRead(path)){waitingForAccess=path; say(t("Allow access to all files for ACNH Recomp, then return.","Permita acesso a todos os arquivos e volte."),false);
+                startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
+            check(path,false);
+        } else if(request==EXPORT_SAVE) {
+            final Uri target=uri; new Thread(()->{String err=null;try(OutputStream out=getContentResolver().openOutputStream(target);ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(out))){zipTree(activeSave(),activeSave(),"",zip);}catch(Exception e){err=e.getMessage();}
+                final String msg=err==null?t("Save backup exported.","Backup do save exportado."):t("Export failed: ","Falha ao exportar: ")+err;
+                final boolean failed=err!=null;runOnUiThread(()->{showSaveManager();say(msg,failed);});}).start();
+        } else if(request==EXPORT_TRACE) {
+            final Uri target=uri; final File source=new File(readSaved(),"xr-camera-trace.txt");
+            new Thread(()->{String err=null;
+                try(InputStream in=new BufferedInputStream(new FileInputStream(source));
+                    OutputStream out=getContentResolver().openOutputStream(target)){
+                    if(out==null)throw new Exception("Could not open destination");
+                    byte[] b=new byte[16384]; int n; while((n=in.read(b))!=-1)out.write(b,0,n);
+                }catch(Exception e){err=e.getMessage();}
+                final String msg=err==null?t("Camera trace exported. Attach xr-camera-trace.txt in ChatGPT.","Registro exportado. Anexe xr-camera-trace.txt no ChatGPT.")
+                    :t("Trace export failed: ","Falha ao exportar: ")+err;
+                final boolean failed=err!=null; runOnUiThread(()->{showCameraTrace();say(msg,failed);});
+            }).start();
+        } else if(request==IMPORT_SAVE) {
+            new AlertDialog.Builder(this).setTitle(t("Replace current save?","Substituir o save atual?"))
+                .setMessage(t("The ZIP backup will replace user/device_save. Export a backup first if you want to keep the current save.","O backup ZIP substituirá user/device_save. Exporte um backup primeiro para manter o save atual."))
+                .setNegativeButton(t("Cancel","Cancelar"),null).setPositiveButton(t("Import","Importar"),(d,w)->importSave(uri)).show();
         }
-        check(path, false);
     }
 
-    // Loads the game library from the folder (in the background: the first time it is copied, a few seconds) and
-    // starts the game, or says why not.
-    private void check(final String folder, final boolean quiet) {
-        if (busy) return;
-        if (!hasPackage(new File(folder))) {
-            if (message == null) show(null);
-            say(explain("missing") + "\n" + folder, true);
-            return;
+    private static void zipTree(File root,File file,String prefix,ZipOutputStream zip)throws Exception {
+        File[] children=file.listFiles(); if(children==null)return;
+        for(File child:children){String name=prefix+child.getName();
+            if(child.isDirectory()){zip.putNextEntry(new ZipEntry(name+"/"));zip.closeEntry();zipTree(root,child,name+"/",zip);}
+            else {zip.putNextEntry(new ZipEntry(name));try(InputStream in=new BufferedInputStream(new FileInputStream(child))){byte[] b=new byte[32768];int n;while((n=in.read(b))!=-1)zip.write(b,0,n);}zip.closeEntry();}
         }
-        busy = true;
-        if (!quiet) {
-            if (message == null) show(null);
-            say(t("Preparing the game...", "Preparando o jogo..."), false);
-            ProgressBar p = new ProgressBar(this);
-            p.setTag("progress");
-            box.addView(p);
-        }
-        new Thread(() -> {
-            final String why = nativeLoadGame(folder, getFilesDir().getAbsolutePath());
-            runOnUiThread(() -> {
-                busy = false;
-                if (box != null) {
-                    View p = box.findViewWithTag("progress");
-                    if (p != null) box.removeView(p);
+    }
+
+    private void importSave(Uri uri) {
+        new Thread(()->{String err=null;File save=activeSave(), parent=save.getParentFile(), stage=new File(parent,"device_save.importing"), old=new File(parent,"device_save.previous");
+            try {
+                deleteTree(stage); if(!parent.exists()&&!parent.mkdirs())throw new Exception("Cannot create save directory");
+                try(InputStream in=getContentResolver().openInputStream(uri);ZipInputStream zip=new ZipInputStream(new BufferedInputStream(in))){
+                    ZipEntry entry; byte[] buf=new byte[32768];
+                    while((entry=zip.getNextEntry())!=null){String name=entry.getName();File out=new File(stage,name);
+                        String canonical=out.getCanonicalPath(), base=stage.getCanonicalPath()+File.separator;
+                        if(!canonical.startsWith(base))throw new Exception("Unsafe ZIP path");
+                        if(entry.isDirectory()){if(!out.mkdirs()&&!out.isDirectory())throw new Exception("Cannot create folder");}
+                        else {File p=out.getParentFile();if(!p.mkdirs()&&!p.isDirectory())throw new Exception("Cannot create folder");
+                            try(OutputStream o=new BufferedOutputStream(new FileOutputStream(out))){int n;while((n=zip.read(buf))!=-1)o.write(buf,0,n);}}
+                        zip.closeEntry();
+                    }
                 }
-                if (!why.isEmpty()) {
-                    if (message == null) show(null);
-                    say(explain(why), true);
-                    return;
-                }
-                try (FileOutputStream o = new FileOutputStream(new File(getFilesDir(), "data_root.txt"))) {
-                    o.write((folder + "\n").getBytes(StandardCharsets.UTF_8));
-                } catch (Exception e) {
-                    // the game still starts; next time the folder is asked for again
-                }
-                Intent game = new Intent();
-                game.setClassName(getPackageName(), "android.app.NativeActivity");
-                startActivity(game);
-                finish();
-            });
+                if(!stage.isDirectory()||stage.list()==null||stage.list().length==0)throw new Exception("Backup is empty or invalid");
+                deleteTree(old); if(save.exists()&&!save.renameTo(old))throw new Exception("Could not preserve existing save");
+                if(!stage.renameTo(save)){if(old.exists())old.renameTo(save);throw new Exception("Could not install imported save");}
+                deleteTree(old);
+            } catch(Exception e){err=e.getMessage();deleteTree(stage);}
+            final String msg=err==null?t("Save imported successfully.","Save importado com sucesso."):t("Import failed: ","Falha ao importar: ")+err;
+            final boolean failed=err!=null;runOnUiThread(()->{showSaveManager();say(msg,failed);});
         }).start();
+    }
+    private static void deleteTree(File f){if(f.isDirectory()){File[] c=f.listFiles();if(c!=null)for(File x:c)deleteTree(x);}if(f.exists())f.delete();}
+
+    private void check(final String folder,final boolean quiet) {
+        if(busy)return;
+        if(!hasPackage(new File(folder))){showLauncher(explain("missing")+"\n"+folder,true);return;}
+        busy=true; if(!quiet){if(box==null)showLauncher(null,false);say(t("Preparing the game...","Preparando o jogo..."),false);
+            ProgressBar p=new ProgressBar(this);p.setTag("progress");box.addView(p);}
+        new Thread(()->{final String why=nativeLoadGame(folder,getFilesDir().getAbsolutePath());runOnUiThread(()->{
+            busy=false;if(box!=null){View p=box.findViewWithTag("progress");if(p!=null)box.removeView(p);}
+            if(!why.isEmpty()){showLauncher(explain(why),true);return;}
+            try(FileOutputStream o=new FileOutputStream(new File(getFilesDir(),"data_root.txt"))){o.write((folder+"\n").getBytes(StandardCharsets.UTF_8));}catch(Exception ignored){}
+            Intent game=new Intent();game.setClassName(getPackageName(),"android.app.NativeActivity");startActivity(game);
+        });}).start();
     }
 }

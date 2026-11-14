@@ -28,8 +28,26 @@
 #include "nvn_vk.h"
 #include "ui/ui.h"
 #include "platform.h"
+#include "config.h"
 
 #include <nx/game.h>
+
+#if defined(__ANDROID__)
+bool xr_android_is_available();
+bool xr_android_get_vulkan_instance_extensions(std::string*);
+bool xr_android_get_vulkan_device_extensions(std::string*);
+bool xr_android_frame_begin();
+bool xr_android_acquire_eye(uint32_t eye, VkImage* image);
+void xr_android_eye_extent(uint32_t eye, uint32_t* width, uint32_t* height);
+uint32_t xr_android_eye_format();
+void xr_android_frame_end();
+
+uint32_t xr_android_vulkan_api_version();
+bool xr_android_create_vulkan_instance(PFN_vkGetInstanceProcAddr, const VkInstanceCreateInfo*, VkInstance*, VkResult*);
+bool xr_android_get_vulkan_physical_device(VkInstance, VkPhysicalDevice*);
+bool xr_android_create_vulkan_device(PFN_vkGetInstanceProcAddr, VkPhysicalDevice, const VkDeviceCreateInfo*, VkDevice*, VkResult*);
+bool xr_android_create_session(VkInstance, VkPhysicalDevice, VkDevice, uint32_t, uint32_t);
+#endif
 
 namespace nx {
 void vblank_hold();  // hle_vi.cpp: waits for the vblank before the one the image is due at
@@ -179,6 +197,11 @@ bool init() {
         log("nvn/vk: no Vulkan loader");
         return false;
     }
+#if defined(__ANDROID__)
+    const bool xr_mode = xr_android_is_available();
+#else
+    const bool xr_mode = false;
+#endif
     for (size_t k = 0; k < g_entry_count; k++) *g_entries[k].pfn = gipa(nullptr, g_entries[k].name);
     p_enum_instance_ext = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
         gipa(nullptr, "vkEnumerateInstanceExtensionProperties"));
@@ -189,6 +212,28 @@ bool init() {
     std::vector<VkExtensionProperties> iext(n);
     p_enum_instance_ext(nullptr, &n, iext.data());
     std::vector<const char*> exts = {VK_KHR_SURFACE_EXTENSION_NAME, plat::vulkan_surface_extension()};
+#if defined(__ANDROID__)
+    std::vector<std::string> xr_instance_ext_storage;
+    if (xr_mode) {
+        std::string required;
+        if (!xr_android_get_vulkan_instance_extensions(&required)) {
+            log("nvn/vk: could not query OpenXR-required Vulkan instance extensions");
+            return false;
+        }
+        for (size_t at = 0; at < required.size();) {
+            while (at < required.size() && required[at] == ' ') ++at;
+            size_t end = required.find(' ', at);
+            if (end == std::string::npos) end = required.size();
+            if (end > at) {
+                std::string name = required.substr(at, end - at);
+                if (std::find_if(exts.begin(), exts.end(), [&](const char* e) { return name == e; }) == exts.end())
+                    xr_instance_ext_storage.push_back(std::move(name));
+            }
+            at = end + 1;
+        }
+        for (const auto& name : xr_instance_ext_storage) exts.push_back(name.c_str());
+    }
+#endif
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     // HDR colour spaces on the surface (video.hdr): only listed by vkGetPhysicalDeviceSurfaceFormatsKHR with it.
     if (has_extension(iext, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME))
@@ -207,10 +252,24 @@ bool init() {
             exts.push_back(e.c_str());
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = nx::game::kInfo.title;
+#if defined(__ANDROID__)
+    app.apiVersion = xr_mode ? xr_android_vulkan_api_version() : VK_API_VERSION_1_3;
+#else
     app.apiVersion = VK_API_VERSION_1_3;
+#endif
     ici.pApplicationInfo = &app;
     ici.enabledExtensionCount = uint32_t(exts.size());
     ici.ppEnabledExtensionNames = exts.data();
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
+        if (!xr_android_create_vulkan_instance(gipa, &ici, &g_instance, &xr_vk_result) ||
+            xr_vk_result != VK_SUCCESS) {
+            log("nvn/vk: OpenXR Vulkan instance creation failed (%d)", int(xr_vk_result));
+            return false;
+        }
+    } else
+#endif
     if (!check(p_create_instance(&ici, nullptr, &g_instance), "vkCreateInstance")) return false;
     for (size_t k = 0; k < g_entry_count; k++)
         if (auto p = gipa(g_instance, g_entries[k].name)) *g_entries[k].pfn = p;
@@ -222,6 +281,14 @@ bool init() {
     std::vector<VkPhysicalDevice> gpus(n);
     p_enum_physical(g_instance, &n, gpus.data());
     gpus.resize(n);
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        if (!xr_android_get_vulkan_physical_device(g_instance, &g_physical) || !g_physical) {
+            log("nvn/vk: OpenXR did not provide a compatible Vulkan physical device");
+            return false;
+        }
+    } else
+#endif
     g_physical = pick_physical_device(gpus);  // NX_GPU, default: the first discrete GPU (nvn_gpu_pick.cpp)
     if (!g_physical) {
         log("nvn/vk: no GPU");
@@ -261,6 +328,32 @@ bool init() {
     std::vector<VkExtensionProperties> dext(n);
     p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
     std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+#if defined(__ANDROID__)
+    std::vector<std::string> xr_device_ext_storage;
+    if (xr_mode) {
+        std::string required;
+        if (!xr_android_get_vulkan_device_extensions(&required)) {
+            log("nvn/vk: could not query OpenXR-required Vulkan device extensions");
+            return false;
+        }
+        for (size_t at = 0; at < required.size();) {
+            while (at < required.size() && required[at] == ' ') ++at;
+            size_t end = required.find(' ', at);
+            if (end == std::string::npos) end = required.size();
+            if (end > at) {
+                std::string name = required.substr(at, end - at);
+                if (!has_extension(dext, name.c_str())) {
+                    log("nvn/vk: OpenXR-required device extension is unavailable: %s", name.c_str());
+                    return false;
+                }
+                if (std::find_if(dexts.begin(), dexts.end(), [&](const char* e) { return name == e; }) == dexts.end())
+                    xr_device_ext_storage.push_back(std::move(name));
+            }
+            at = end + 1;
+        }
+        for (const auto& name : xr_device_ext_storage) dexts.push_back(name.c_str());
+    }
+#endif
     // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
     // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
     // features, which must be enabled to be used.
@@ -284,7 +377,7 @@ bool init() {
     // 1.1, where a 1.2 or 1.3 struct is invalid, and draw parameters then come in their own struct.
     VkPhysicalDeviceProperties dprops{};
     p_vkGetPhysicalDeviceProperties(g_physical, &dprops);
-    const uint32_t api = dprops.apiVersion;
+    const uint32_t api = std::min(dprops.apiVersion, app.apiVersion);  // never use core features newer than the instance API
     VkPhysicalDeviceShaderDrawParametersFeatures fdraw{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES};
     VkPhysicalDeviceDynamicRenderingFeatures fdyn{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES};
     void** tail;
@@ -449,8 +542,24 @@ bool init() {
     dci.enabledExtensionCount = uint32_t(dexts.size());
     dci.ppEnabledExtensionNames = dexts.data();
     dci.pNext = &features;
+#if defined(__ANDROID__)
+    if (xr_mode) {
+        VkResult xr_vk_result = VK_ERROR_INITIALIZATION_FAILED;
+        if (!xr_android_create_vulkan_device(gipa, g_physical, &dci, &g_device, &xr_vk_result) || xr_vk_result != VK_SUCCESS) {
+            log("nvn/vk: OpenXR Vulkan device creation failed (%d)", int(xr_vk_result));
+            return false;
+        }
+    } else
+#endif
     if (!check(p_create_device(g_physical, &dci, nullptr, &g_device), "vkCreateDevice")) return false;
     p_vkGetDeviceQueue(g_device, g_family, 0, &g_queue);
+#if defined(__ANDROID__)
+    if (xr_mode && !xr_android_create_session(g_instance, g_physical, g_device, g_family, 0)) {
+        log("nvn/vk: OpenXR session creation failed");
+        return false;
+    }
+    if (xr_mode) log("nvn/vk: OpenXR-compatible Vulkan device and XrSession created");
+#endif
     ffx_fg_device_ready(g_device, g_queue);
     vk_defer_install();  // nvn_vk_defer.cpp
     temporal_device_ready();
@@ -1246,6 +1355,81 @@ struct PresentParts {
 // the submit and the present.
 template <class Record>
 void present_image(const int32_t* crop, Record&& record) {
+#if defined(__ANDROID__)
+    if (xr_android_is_available()) {
+        const bool should_render = xr_android_frame_begin();
+        if (!should_render) { xr_android_frame_end(); return; }
+        if (!begin()) { xr_android_frame_end(); return; }
+        bool real = true;
+        GpuImage* src = record(g_cb, real);
+        VkImage eyes[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        const bool acquired = src && xr_android_acquire_eye(0, &eyes[0]) &&
+                              xr_android_acquire_eye(1, &eyes[1]);
+        if (acquired) {
+            const VkImageLayout old_layout = src->layout;
+            if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED)
+                transition(g_cb, *src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            for (uint32_t eye = 0; eye < 2; ++eye) {
+                uint32_t width = 0, height = 0;
+                xr_android_eye_extent(eye, &width, &height);
+                GpuImage dst;
+                dst.image = eyes[eye];
+                dst.format = static_cast<VkFormat>(xr_android_eye_format());
+                dst.width = width;
+                dst.height = height;
+                dst.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                transition(g_cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                VkImageBlit blit{};
+                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                blit.srcOffsets[1] = {int32_t(src->width), int32_t(src->height), 1};
+                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+
+                // Quest eye swapchains are close to square while the game's framebuffer is widescreen.
+                // Fit the complete game image inside each eye instead of stretching it to the eye extent.
+                // Clear first so the unused area is a stable black letterbox rather than stale swapchain data.
+                const float source_aspect = float(src->width) / float(std::max(1u, src->height));
+                const float eye_aspect = float(width) / float(std::max(1u, height));
+                int32_t fitted_width = int32_t(width);
+                int32_t fitted_height = int32_t(height);
+                if (source_aspect > eye_aspect) {
+                    fitted_height = std::max(1, int32_t(float(width) / source_aspect + 0.5f));
+                } else {
+                    fitted_width = std::max(1, int32_t(float(height) * source_aspect + 0.5f));
+                }
+                // Keep the game image at its native aspect ratio and center it exactly
+                // in each eye. Do not apply per-eye offsets or an extra 90% shrink:
+                // those made the visible picture look displaced and unnecessarily small.
+                const int32_t offset_x = (int32_t(width) - fitted_width) / 2;
+                const int32_t offset_y = (int32_t(height) - fitted_height) / 2;
+                blit.dstOffsets[0] = {offset_x, offset_y, 0};
+                blit.dstOffsets[1] = {offset_x + fitted_width, offset_y + fitted_height, 1};
+
+                VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
+                VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                p_vkCmdClearColorImage(g_cb, dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+                if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED && src->width && src->height) {
+                    p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                     dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+                }
+                // The VR path presents directly to OpenXR eye swapchains, so it must
+                // draw the in-game settings UI here as well as the desktop presenter path.
+                // ui_record expects PRESENT_SRC_KHR after the image blit and leaves it there.
+                transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+                ui::ui_record(g_cb, dst.image, dst.format, VkExtent2D{width, height});
+            }
+            if (old_layout != VK_IMAGE_LAYOUT_UNDEFINED) transition(g_cb, *src, old_layout);
+            if (async_gpu()) frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
+            else end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+        } else {
+            if (g_cb) {
+                if (async_gpu()) frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
+                else end_and_wait(VK_NULL_HANDLE, VK_NULL_HANDLE);
+            }
+        }
+        xr_android_frame_end();
+        return;
+    }
+#endif
     presenter_wait();
     if (!g_swapchain) return;
     uint32_t index = 0;
@@ -1490,7 +1674,7 @@ void gpu_present(uint64_t texture, const int32_t* crop, int interval) {
     if (crop && src) uw_crop(*src, crop, src_crop), crop = src_crop;
     // NX_FRAMEGEN (nvn_framegen.cpp): the frame halfway between the last one and this is shown now, this one half a
     // game frame later. The GPU lock is let go meanwhile: the game's next frame is replayed after it.
-    if (framegen_wanted() && src && src->layout != VK_IMAGE_LAYOUT_UNDEFINED) {
+    if (framegen_wanted() && !xr_android_is_available() && src && src->layout != VK_IMAGE_LAYOUT_UNDEFINED) {
         bool generate = framegen_frame_begin(plat::monotonic_ns());
         GpuImage* gen = nullptr;
         present_image(crop, [&](VkCommandBuffer cb, bool& real) {
@@ -1517,7 +1701,7 @@ void gpu_present(uint64_t texture, const int32_t* crop, int interval) {
     present_image(crop, [&](VkCommandBuffer, bool&) { return src; });
     // A display faster than the game: the frame again each refresh between two. Not with AMD frame generation, whose
     // own frame fills that refresh: a repeat was a game frame to it, and each one waited out its pacing (40 fps).
-    if (present_vsync_paced() && interval > 0 && !ffx_fg_on()) {
+    if (present_vsync_paced() && interval > 0 && !ffx_fg_on() && !xr_android_is_available()) {
         const int repeats = std::max(1, int(std::lround(double(interval) * plat::display_refresh_hz() / 60.0))) - 1;
         for (int k = 0; k < repeats && g_swapchain && !plat::window_minimized(); k++)
             present_image(crop, [&](VkCommandBuffer, bool& real) {
