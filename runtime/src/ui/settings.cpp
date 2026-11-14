@@ -1263,6 +1263,12 @@ void report_section() {
 
 #if defined(__ANDROID__)
 void page_camera_trace() {
+    section("First-person VR");
+    ImGui::TextWrapped("Experimental: place the gameplay camera at approximate eye height and apply Quest head rotation. This does not yet provide true per-eye game rendering or animated head-bone tracking.");
+    row("First-person camera", "Uses the gameplay camera target as the character anchor. Restart the app after changing the setting.", [&](float w) {
+        toggle("vr.first_person", false, w);
+    });
+    ImGui::Dummy(ImVec2(0, 8 * g_scale));
     section("Camera trace");
     ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
     row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
