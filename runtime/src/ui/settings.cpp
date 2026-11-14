@@ -1266,7 +1266,7 @@ void page_camera_trace() {
     section("Camera trace");
     ImGui::TextWrapped("Record the game's world-camera data for VR debugging. Restart the app after changing the setting.");
     row("Camera diagnostics", "Writes xr-camera-trace.txt once per second while playing.", [&](float w) {
-        toggle("vr.camera_trace", false, w);
+        toggle("vr.camera_trace", true, w);
     });
     if (button("Open Camera Trace Folder")) {
         plat::open_path(plat::data_root());
