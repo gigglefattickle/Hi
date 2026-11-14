@@ -316,6 +316,11 @@ void config_apply() {
     for (const Mapping& m : kMappings) {
         ConfigEntry* e = find(m.key);
         std::string value = std::string(m.key) == "game.language" ? game_lang : e ? e->value : std::string();
+#if defined(__ANDROID__)
+        // Camera tracing is enabled on fresh Android installs so users can collect VR diagnostics without first
+        // finding the setting. An explicit config.ini value of 0 still disables it.
+        if (std::string(m.key) == "vr.camera_trace" && !e) value = "1";
+#endif
         // No frame rate chosen: 30. 60 (the SpeedFix) is asked for in the settings: game folders get its code from
         // ACNHRecomp-Importer 1.0.6 on, and the loader keeps 30 when a folder's code lacks it.
         if (value.empty()) continue;
