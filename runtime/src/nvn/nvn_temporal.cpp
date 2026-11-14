@@ -181,7 +181,7 @@ void lookat_update(CPU& c) {
     if (!temporal_on() && !xr_trace) return;
     const uint64_t cam = c.x[0];
     if (cam < kHeapBase || cam >= kHeapBase + heap_size()) return;
-    const float* f = reinterpret_cast<const float*>(cam + 0x38);
+    float* f = reinterpret_cast<float*>(cam + 0x38);
     LookAt snapshot;
     {
         std::lock_guard lk(g_cam_lock);
